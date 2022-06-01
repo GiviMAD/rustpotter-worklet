@@ -1,11 +1,11 @@
 import './textEncodingPolyfill';
 import init, { RustpotterDetection, RustpotterJS, RustpotterJSBuilder, SampleFormat } from "rustpotter-web";
 class RustpotterWorkletImpl {
-  wasmLoadedPromise: Promise<void>;
-  rustpotterJS: RustpotterJS;
-  samples: Float32Array;
-  samplesOffset: number;
-  rustpotterFrameSize: number;
+  private wasmLoadedPromise: Promise<void>;
+  private rustpotterJS: RustpotterJS;
+  private samples: Float32Array;
+  private samplesOffset: number;
+  private rustpotterFrameSize: number;
   constructor(wasmBytes: ArrayBuffer, private config: {
     sampleRate: number,
     threshold: number,
@@ -92,10 +92,14 @@ if (typeof registerProcessor === 'function') {
         switch (data['command']) {
           case 'close':
             this.continueProcess = false;
+            break;
+          case 'done':
+            this.continueProcess = false;
             if (this.recorder) {
               this.recorder.close();
               this.recorder = null;
             }
+            this.port.postMessage({ type: 'done' });
             break;
           case 'init':
             this.recorder = new RustpotterWorkletImpl(

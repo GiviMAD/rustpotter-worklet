@@ -1,5 +1,5 @@
 import './textEncodingPolyfill';
-import init, { RustpotterDetection, RustpotterJS, RustpotterJSBuilder, SampleFormat } from "rustpotter-web";
+import init, { RustpotterDetection, RustpotterJS, RustpotterJSBuilder, SampleFormat, NoiseDetectionMode } from "rustpotter-web";
 class RustpotterWorkletImpl {
   private wasmLoadedPromise: Promise<void>;
   private rustpotterJS: RustpotterJS;
@@ -13,6 +13,8 @@ class RustpotterWorkletImpl {
     comparatorRef: number,
     comparatorBandSize: number,
     eagerMode: boolean,
+    noiseMode?: NoiseDetectionMode,
+    noiseSensitivity: number,
   }, private onSpot: (name: string, score: number) => void) {
     if (!this.config['sampleRate']) {
       throw new Error("sampleRate value is required to record. NOTE: Audio is not resampled!");
@@ -30,6 +32,10 @@ class RustpotterWorkletImpl {
       builder.setComparatorRef(this.config.comparatorRef);
       builder.setComparatorBandSize(this.config.comparatorBandSize);
       builder.setEagerMode(this.config.eagerMode);
+      if (this.config.noiseMode != null) {
+        builder.setNoiseMode(this.config.noiseMode);
+        builder.setNoiseSensitivity(this.config.noiseMode);
+      }
       this.rustpotterJS = builder.build();
       this.rustpotterFrameSize = this.rustpotterJS.getFrameSize();
       this.samples = new Float32Array(this.rustpotterFrameSize);
@@ -111,6 +117,8 @@ if (typeof registerProcessor === 'function') {
                 comparatorRef: data['comparatorRef'],
                 comparatorBandSize: data['comparatorBandSize'],
                 eagerMode: data['eagerMode'],
+                noiseMode: data['noiseMode'],
+                noiseSensitivity: data['noiseSensitivity'],
               },
               (name, score) => {
                 this.port.postMessage({ type: 'detection', name, score });
@@ -182,6 +190,8 @@ if (typeof registerProcessor === 'function') {
             comparatorRef: data['comparatorRef'],
             comparatorBandSize: data['comparatorBandSize'],
             eagerMode: data['eagerMode'],
+            noiseMode: data['noiseMode'],
+            noiseSensitivity: data['noiseSensitivity'],
           },
           (name, score) => {
             postMessage({ type: 'detection', name, score });

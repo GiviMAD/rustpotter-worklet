@@ -1,4 +1,6 @@
-type RustpotterServiceConfig = {
+import { NoiseDetectionMode } from "rustpotter-web";
+export { NoiseDetectionMode } from "rustpotter-web";
+export type RustpotterServiceConfig = {
   workletPath?: string,
   wasmPath?: string,
   monitorGain?: number,
@@ -8,8 +10,10 @@ type RustpotterServiceConfig = {
   comparatorRef?: number,
   comparatorBandSize?: number,
   eagerMode?: boolean,
+  noiseMode?: NoiseDetectionMode,
+  noiseSensitivity: number,
 };
-class RustpotterService {
+export class RustpotterService {
   private state: string;
   private initialize: Promise<any>;
   private stream: MediaStream;
@@ -20,7 +24,7 @@ class RustpotterService {
   private processor: MessagePort | Worker;
   private processorNode: AudioWorkletNode | ScriptProcessorNode;
   private config: Required<RustpotterServiceConfig>
-  constructor(config: RustpotterServiceConfig = {}, private customSourceNode?: MediaStreamAudioSourceNode ) {
+  constructor(config: RustpotterServiceConfig = {} as any, private customSourceNode?: MediaStreamAudioSourceNode) {
     if (!RustpotterService.isRecordingSupported()) {
       throw new Error("Recording is not supported in this browser");
     }
@@ -36,6 +40,8 @@ class RustpotterService {
       comparatorRef: 0.22,
       comparatorBandSize: 6,
       eagerMode: true,
+      noiseMode: undefined,
+      noiseSensitivity: 0.5,
     } as Required<RustpotterServiceConfig>, config);
     this.initAudioContext();
     this.initialize = this.initWorklet().then(() => this.initEncoder());
@@ -285,4 +291,3 @@ class RustpotterService {
   onstop = () => { };
   onspot = (name: string, score: number) => { };
 }
-module.exports = { RustpotterService };

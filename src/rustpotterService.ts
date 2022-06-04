@@ -163,6 +163,8 @@ export class RustpotterService {
               comparatorRef: this.config.comparatorRef,
               comparatorBandSize: this.config.comparatorBandSize,
               eagerMode: this.config.eagerMode,
+              noiseMode: this.config.noiseMode,
+              noiseSensitivity: this.config.noiseSensitivity,
               wasmBytes,
             })
           );

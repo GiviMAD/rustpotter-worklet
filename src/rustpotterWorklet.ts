@@ -34,7 +34,7 @@ class RustpotterWorkletImpl {
       builder.setEagerMode(this.config.eagerMode);
       if (this.config.noiseMode != null) {
         builder.setNoiseMode(this.config.noiseMode);
-        builder.setNoiseSensitivity(this.config.noiseMode);
+        builder.setNoiseSensitivity(this.config.noiseSensitivity);
       }
       this.rustpotterJS = builder.build();
       this.rustpotterFrameSize = this.rustpotterJS.getFrameSize();

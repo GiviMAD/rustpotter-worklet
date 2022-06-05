@@ -3,8 +3,6 @@ export { NoiseDetectionMode } from "rustpotter-web";
 export type RustpotterServiceConfig = {
   workletPath?: string,
   wasmPath?: string,
-  monitorGain?: number,
-  recordingGain?: number,
   threshold?: number,
   averagedThreshold?: number,
   comparatorRef?: number,
@@ -18,8 +16,6 @@ export class RustpotterService {
   private initialize: Promise<any>;
   private stream: MediaStream;
   private audioContext: AudioContext;
-  private recordingGainNode?: GainNode;
-  private monitorGainNode?: GainNode;
   private sourceNode?: MediaStreamAudioSourceNode;
   private processor: MessagePort | Worker;
   private processorNode: AudioWorkletNode | ScriptProcessorNode;
@@ -67,8 +63,6 @@ export class RustpotterService {
     }
   }
   close() {
-    this.monitorGainNode.disconnect();
-    this.recordingGainNode.disconnect();
 
     if (this.sourceNode) {
       this.sourceNode.disconnect();
@@ -103,11 +97,6 @@ export class RustpotterService {
     const _AudioContext = global.AudioContext || (global as any).webkitAudioContext as typeof global.AudioContext
     this.audioContext = this.customSourceNode?.context ? this.customSourceNode.context as AudioContext : new _AudioContext();
 
-    this.monitorGainNode = this.audioContext.createGain();
-    this.setMonitorGain(this.config.monitorGain);
-
-    this.recordingGainNode = this.audioContext.createGain();
-    this.setRecordingGain(this.config.recordingGain);
   };
   private initEncoder() {
     if (this.audioContext.audioWorklet) {
@@ -183,7 +172,7 @@ export class RustpotterService {
   pause() {
     if (this.state === "recording") {
       this.state = "paused";
-      this.recordingGainNode.disconnect();
+      this.sourceNode.disconnect();
       this.onpause();
     }
     return Promise.resolve();
@@ -191,22 +180,8 @@ export class RustpotterService {
   resume() {
     if (this.state === "paused") {
       this.state = "recording";
-      this.recordingGainNode.connect(this.processorNode);
+      this.sourceNode.connect(this.processorNode);
       this.onresume();
-    }
-  }
-  setRecordingGain(gain: number) {
-    this.config.recordingGain = gain;
-
-    if (this.recordingGainNode && this.audioContext) {
-      this.recordingGainNode.gain.setTargetAtTime(gain, this.audioContext.currentTime, 0.01);
-    }
-  }
-  setMonitorGain(gain: number) {
-    this.config.monitorGain = gain;
-
-    if (this.monitorGainNode && this.audioContext) {
-      this.monitorGainNode.gain.setTargetAtTime(gain, this.audioContext.currentTime, 0.01);
     }
   }
   start() {
@@ -218,10 +193,7 @@ export class RustpotterService {
         .then(() => Promise.all([this.initSourceNode(), this.initWorker()]))
         .then(() => {
           this.state = "recording";
-          this.sourceNode.connect(this.monitorGainNode);
-          this.sourceNode.connect(this.recordingGainNode);
-          this.monitorGainNode.connect(this.audioContext.destination);
-          this.recordingGainNode.connect(this.processorNode);
+          this.sourceNode.connect(this.processorNode);
           this.onstart();
         })
         .catch(error => {
@@ -235,8 +207,7 @@ export class RustpotterService {
     if (this.state === "paused" || this.state === "recording") {
       this.state = "inactive";
       // macOS and iOS requires the source to remain connected (in case stopped while paused)
-      this.recordingGainNode.connect(this.processorNode);
-      this.monitorGainNode.disconnect();
+      this.sourceNode.connect(this.processorNode)
       this.clearStream();
       return new Promise<void>(resolve => {
         const callback = ({ data }: any) => {

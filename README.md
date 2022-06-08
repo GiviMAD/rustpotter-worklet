@@ -6,7 +6,7 @@
 
 ## Description
 
-Run [Rustpotter](https://github.com/GiviMAD/rustpotter) (a free and open source wake word spotter forged in rust) in the browser as a AudioWorkletProcessor.
+Run [Rustpotter](https://github.com/GiviMAD/rustpotter) (an open source wake word spotter forged in rust) in the browser as an AudioWorkletProcessor.
 
 This package exposed a RustpotterService class that you can use to create and communicate with a worklet that runs rustpotter on its thread.
 

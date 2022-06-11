@@ -1,5 +1,5 @@
 import './textEncodingPolyfill';
-import init, { RustpotterDetection, RustpotterJS, RustpotterJSBuilder, SampleFormat, NoiseDetectionMode } from "rustpotter-web";
+import init, { RustpotterDetection, RustpotterJS, RustpotterJSBuilder, SampleFormat, NoiseDetectionMode } from "rustpotter-web-slim";
 class RustpotterWorkletImpl {
   private wasmLoadedPromise: Promise<void>;
   private rustpotterJS: RustpotterJS;

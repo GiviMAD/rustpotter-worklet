@@ -1,5 +1,5 @@
-import { NoiseDetectionMode } from "rustpotter-web";
-export { NoiseDetectionMode } from "rustpotter-web";
+import { NoiseDetectionMode } from "rustpotter-web-slim";
+export { NoiseDetectionMode } from "rustpotter-web-slim";
 export type RustpotterServiceConfig = {
   workletPath?: string,
   wasmPath?: string,

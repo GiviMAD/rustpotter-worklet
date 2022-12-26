@@ -147,6 +147,7 @@ if (typeof registerProcessor === 'function') {
             break;
           default:
           // Ignore any unknown commands and continue recieving commands
+          console.error("Unknown command")
         }
       }
     }
@@ -157,7 +158,6 @@ if (typeof registerProcessor === 'function') {
       return this.continueProcess;
     }
   }
-
   registerProcessor('rustpotter-worklet', RustpotterWorklet);
 } else {
   // run in scriptProcessor worker scope

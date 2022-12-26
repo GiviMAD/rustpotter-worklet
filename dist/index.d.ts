@@ -1,5 +1,5 @@
 export { NoiseDetectionMode } from "rustpotter-web-slim";
-export declare type RustpotterServiceConfig = {
+export type RustpotterServiceConfig = {
     workletPath?: string;
     wasmPath?: string;
     threshold?: number;
@@ -8,12 +8,11 @@ export declare type RustpotterServiceConfig = {
     comparatorBandSize?: number;
     eagerMode?: boolean;
     noiseMode?: NoiseDetectionMode;
-    noiseSensitivity: number;
+    noiseSensitivity?: number;
 };
 export declare class RustpotterService {
     private customSourceNode?;
     private state;
-    private initialize;
     private stream;
     private audioContext;
     private sourceNode?;
@@ -27,11 +26,11 @@ export declare class RustpotterService {
     close(): Promise<void>;
     private postBuffers;
     private initAudioContext;
-    private initEncoder;
+    private registerWorker;
     private initSourceNode;
     private setupListener;
     private initWorker;
-    private initWorklet;
+    getProcessorNode(audioContext: AudioContext): Promise<AudioWorkletNode | ScriptProcessorNode>;
     pause(): Promise<void>;
     resume(): void;
     start(): Promise<void>;

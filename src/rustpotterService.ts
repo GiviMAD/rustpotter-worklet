@@ -9,11 +9,10 @@ export type RustpotterServiceConfig = {
   comparatorBandSize?: number,
   eagerMode?: boolean,
   noiseMode?: NoiseDetectionMode,
-  noiseSensitivity: number,
+  noiseSensitivity?: number,
 };
 export class RustpotterService {
   private state: string;
-  private initialize: Promise<any>;
   private stream: MediaStream;
   private audioContext: AudioContext;
   private sourceNode?: MediaStreamAudioSourceNode;
@@ -39,8 +38,6 @@ export class RustpotterService {
       noiseMode: undefined,
       noiseSensitivity: 0.5,
     } as Required<RustpotterServiceConfig>, config);
-    this.initAudioContext();
-    this.initialize = this.initWorklet().then(() => this.initEncoder());
   }
   static isRecordingSupported() {
     const getUserMediaSupported = global.navigator && global.navigator.mediaDevices && global.navigator.mediaDevices.getUserMedia;
@@ -96,17 +93,17 @@ export class RustpotterService {
   private initAudioContext() {
     const _AudioContext = global.AudioContext || (global as any).webkitAudioContext as typeof global.AudioContext
     this.audioContext = this.customSourceNode?.context ? this.customSourceNode.context as AudioContext : new _AudioContext();
-
   };
-  private initEncoder() {
-    if (this.audioContext.audioWorklet) {
-      this.processorNode = new AudioWorkletNode(this.audioContext, 'rustpotter-worklet', { numberOfOutputs: 0 });
+  private async registerWorker(audioContext: AudioContext) {
+    if (audioContext.audioWorklet) {
+      await audioContext.audioWorklet.addModule(this.config.workletPath);
+      this.processorNode = new AudioWorkletNode(audioContext, 'rustpotter-worklet', { numberOfOutputs: 0 });
       this.processor = this.processorNode.port;
     } else {
       console.log('audioWorklet support not detected. Falling back to scriptProcessor');
-      this.processorNode = this.audioContext.createScriptProcessor(4096, 1, 1);
+      this.processorNode = audioContext.createScriptProcessor(4096, 1, 1);
       this.processorNode.onaudioprocess = ({ inputBuffer }) => this.postBuffers(inputBuffer);
-      this.processorNode.connect(this.audioContext.destination);
+      this.processorNode.connect(audioContext.destination);
       this.processor = new global.Worker(this.config.workletPath);
     }
   }
@@ -124,7 +121,7 @@ export class RustpotterService {
     this.processor.removeEventListener("message", this.defaultCallback);
     this.processor.addEventListener("message", this.defaultCallback);
   }
-  private initWorker() {
+  private initWorker(audioContext: AudioContext) {
     return new Promise<void>((resolve, reject) => {
       const callback = ({ data }: any) => {
         switch (data['type']) {
@@ -146,7 +143,7 @@ export class RustpotterService {
           .then(wasmBytes =>
             this.processor.postMessage({
               command: 'init',
-              sampleRate: this.audioContext.sampleRate,
+              sampleRate: audioContext.sampleRate,
               threshold: this.config.threshold,
               averagedThreshold: this.config.averagedThreshold,
               comparatorRef: this.config.comparatorRef,
@@ -162,12 +159,11 @@ export class RustpotterService {
       }
     });
   }
-  private initWorklet() {
-    if (this.audioContext.audioWorklet) {
-      return this.audioContext.audioWorklet.addModule(this.config.workletPath);
-    }
-
-    return Promise.resolve();
+  async getProcessorNode(audioContext: AudioContext) {
+    this.state = "external";
+    await this.registerWorker(audioContext);
+    await this.initWorker(audioContext);
+    return this.processorNode;
   }
   pause() {
     if (this.state === "recording") {
@@ -187,10 +183,10 @@ export class RustpotterService {
   start() {
     if (this.state === "inactive") {
       this.state = 'loading';
-
+      this.initAudioContext();
       return this.audioContext.resume()
-        .then(() => this.initialize)
-        .then(() => Promise.all([this.initSourceNode(), this.initWorker()]))
+        .then(() => this.registerWorker(this.audioContext))
+        .then(() => Promise.all([this.initSourceNode(), this.initWorker(this.audioContext)]))
         .then(() => {
           this.state = "recording";
           this.sourceNode.connect(this.processorNode);

@@ -72,7 +72,7 @@ export class RustpotterService {
       this.processor.postMessage({ command: "close" });
     }
 
-    if (!this.customSourceNode) {
+    if (!this.customSourceNode && this.audioContext) {
       return this.audioContext.close();
     }
 
@@ -224,8 +224,8 @@ export class RustpotterService {
   getState() {
     return this.state;
   }
-  async addWakewordByPath(path: string) {
-    return this.fetchResource(path)
+  async addWakewordByPath(path: string, headers?: HeadersInit) {
+    return this.fetchResource(path, headers)
       .then(buffer => this.addWakeword(buffer));
   }
   async addWakeword(wakewordBytes: ArrayBuffer) {
@@ -247,8 +247,8 @@ export class RustpotterService {
       });
     });
   }
-  private fetchResource(path: string) {
-    return window.fetch(path)
+  private fetchResource(path: string, headers?: HeadersInit) {
+    return window.fetch(path, { headers })
       .then(response => response.arrayBuffer())
   }
   private finish() {

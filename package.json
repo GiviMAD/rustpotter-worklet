@@ -1,6 +1,6 @@
 {
   "name": "rustpotter-worklet",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "An open source wake word spotter forged in rust, running as an audio worklet",
   "main": "dist/index.js",
   "license": "Apache-2.0",

@@ -36,7 +36,7 @@ export declare class RustpotterService {
     start(): Promise<void>;
     stop(): Promise<void>;
     getState(): string;
-    addWakewordByPath(path: string): Promise<void>;
+    addWakewordByPath(path: string, headers?: HeadersInit): Promise<void>;
     addWakeword(wakewordBytes: ArrayBuffer): Promise<void>;
     private fetchResource;
     private finish;

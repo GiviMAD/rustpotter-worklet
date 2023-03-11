@@ -1,28 +1,20 @@
 import './textEncodingPolyfill';
-import init, { RustpotterDetection, RustpotterJS, RustpotterJSBuilder, SampleFormat, NoiseDetectionMode } from "rustpotter-web-slim";
+import type { RustpotterServiceConfig } from './index';
+import init, { RustpotterDetection, Rustpotter, RustpotterBuilder, SampleFormat } from "rustpotter-web-slim";
 class RustpotterWorkletImpl {
   private wasmLoadedPromise: Promise<void>;
-  private rustpotterJS: RustpotterJS;
+  private rustpotter: Rustpotter;
   private samples: Float32Array;
   private samplesOffset: number;
   private rustpotterFrameSize: number;
-  constructor(wasmBytes: ArrayBuffer, private config: {
-    sampleRate: number,
-    threshold: number,
-    averagedThreshold: number,
-    comparatorRef: number,
-    comparatorBandSize: number,
-    eagerMode: boolean,
-    noiseMode?: NoiseDetectionMode,
-    noiseSensitivity: number,
-  }, private onSpot: (name: string, score: number) => void) {
+  constructor(wasmBytes: ArrayBuffer, private config: { sampleRate: number, } & RustpotterServiceConfig, private onSpot: (name: string, score: number) => void) {
     if (!this.config['sampleRate']) {
       throw new Error("sampleRate value is required to record. NOTE: Audio is not resampled!");
     }
     this.samplesOffset = 0;
     this.wasmLoadedPromise = (async () => {
       await init(WebAssembly.compile(wasmBytes));
-      const builder = RustpotterJSBuilder.new();
+      const builder = RustpotterBuilder.new();
       builder.setSampleRate(this.config.sampleRate);
       builder.setSampleFormat(SampleFormat.float);
       builder.setBitsPerSample(32);
@@ -31,13 +23,15 @@ class RustpotterWorkletImpl {
       builder.setThreshold(this.config.threshold);
       builder.setComparatorRef(this.config.comparatorRef);
       builder.setComparatorBandSize(this.config.comparatorBandSize);
-      builder.setEagerMode(this.config.eagerMode);
-      if (this.config.noiseMode != null) {
-        builder.setNoiseMode(this.config.noiseMode);
-        builder.setNoiseSensitivity(this.config.noiseSensitivity);
-      }
-      this.rustpotterJS = builder.build();
-      this.rustpotterFrameSize = this.rustpotterJS.getFrameSize();
+      builder.setGainNormalizerEnabled(this.config.gainNormalizerEnabled);
+      builder.setMinGain(this.config.minGain);
+      builder.setMaxGain(this.config.maxGain);
+      if (this.config.gainRef != null) builder.setGainRef(this.config.gainRef);
+      builder.setBandPassEnabled(this.config.bandPassEnabled);
+      builder.setBandPassLowCutoff(this.config.bandPassLowCutoff);
+      builder.setBandPassHighCutoff(this.config.bandPassHighCutoff);
+      this.rustpotter = builder.build();
+      this.rustpotterFrameSize = this.rustpotter.getFrameSize();
       this.samples = new Float32Array(this.rustpotterFrameSize);
       builder.free();
     })();
@@ -46,7 +40,7 @@ class RustpotterWorkletImpl {
     return this.wasmLoadedPromise;
   }
   addWakeword(data: Uint8Array) {
-    this.rustpotterJS.addWakewordModelBytes(data);
+    this.rustpotter.addWakeword(data);
   }
   process(buffers: Float32Array[]) {
     const channelBuffer = buffers[0];
@@ -54,7 +48,7 @@ class RustpotterWorkletImpl {
     if (nextOffset <= this.rustpotterFrameSize) {
       this.samples.set(channelBuffer, this.samplesOffset);
       if (nextOffset == this.rustpotterFrameSize - 1) {
-        this.handleDetection(this.rustpotterJS.processFloat32(this.samples));
+        this.handleDetection(this.rustpotter.processFloat32(this.samples));
         this.samplesOffset = 0;
       } else {
         this.samplesOffset = nextOffset;
@@ -62,7 +56,7 @@ class RustpotterWorkletImpl {
     } else {
       var requiresSamples = this.rustpotterFrameSize - this.samplesOffset;
       this.samples.set(channelBuffer.subarray(0, requiresSamples), this.samplesOffset);
-      this.handleDetection(this.rustpotterJS.processFloat32(this.samples));
+      this.handleDetection(this.rustpotter.processFloat32(this.samples));
       var remaining = channelBuffer.subarray(requiresSamples);
       if (remaining.length >= channelBuffer.length) {
         this.samplesOffset = 0;
@@ -81,7 +75,7 @@ class RustpotterWorkletImpl {
   }
 
   close() {
-    this.rustpotterJS.free();
+    this.rustpotter.free();
   }
 }
 
@@ -108,17 +102,12 @@ if (typeof registerProcessor === 'function') {
             this.port.postMessage({ type: 'done' });
             break;
           case 'init':
+            const wasmBytes = data['wasmBytes'];
+            delete data['wasmBytes'];
             this.recorder = new RustpotterWorkletImpl(
-              data['wasmBytes'],
+              wasmBytes,
               {
-                sampleRate: data['sampleRate'],
-                threshold: data['threshold'],
-                averagedThreshold: data['averagedThreshold'],
-                comparatorRef: data['comparatorRef'],
-                comparatorBandSize: data['comparatorBandSize'],
-                eagerMode: data['eagerMode'],
-                noiseMode: data['noiseMode'],
-                noiseSensitivity: data['noiseSensitivity'],
+                ...data
               },
               (name, score) => {
                 this.port.postMessage({ type: 'detection', name, score });
@@ -146,8 +135,8 @@ if (typeof registerProcessor === 'function') {
             }
             break;
           default:
-          // Ignore any unknown commands and continue recieving commands
-          console.error("Unknown command")
+            // Ignore any unknown commands and continue recieving commands
+            console.error("Unknown command")
         }
       }
     }
@@ -181,17 +170,12 @@ if (typeof registerProcessor === 'function') {
         close();
         break;
       case 'init':
+        const wasmBytes = data['wasmBytes'];
+        delete data['wasmBytes'];
         recorder = new RustpotterWorkletImpl(
-          data['wasmBytes'],
+          wasmBytes,
           {
-            sampleRate: data['sampleRate'],
-            threshold: data['threshold'],
-            averagedThreshold: data['averagedThreshold'],
-            comparatorRef: data['comparatorRef'],
-            comparatorBandSize: data['comparatorBandSize'],
-            eagerMode: data['eagerMode'],
-            noiseMode: data['noiseMode'],
-            noiseSensitivity: data['noiseSensitivity'],
+            ...data
           },
           (name, score) => {
             postMessage({ type: 'detection', name, score });

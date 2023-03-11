@@ -6,6 +6,5 @@
       "target": "es6",
       "moduleResolution": "node",
       "declaration": true,
-      "declarationDir": "./dist/",
     }
   }

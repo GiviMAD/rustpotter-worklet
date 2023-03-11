@@ -1,5 +1,3 @@
-import { NoiseDetectionMode } from "rustpotter-web-slim";
-export { NoiseDetectionMode } from "rustpotter-web-slim";
 export type RustpotterServiceConfig = {
   workletPath?: string,
   wasmPath?: string,
@@ -7,9 +5,13 @@ export type RustpotterServiceConfig = {
   averagedThreshold?: number,
   comparatorRef?: number,
   comparatorBandSize?: number,
-  eagerMode?: boolean,
-  noiseMode?: NoiseDetectionMode,
-  noiseSensitivity?: number,
+  gainNormalizerEnabled: boolean,
+  minGain: number,
+  maxGain: number,
+  gainRef: number | undefined,
+  bandPassEnabled: boolean,
+  bandPassLowCutoff: number,
+  bandPassHighCutoff: number,
 };
 export class RustpotterService {
   private state: string;
@@ -34,9 +36,13 @@ export class RustpotterService {
       averagedThreshold: 0.25,
       comparatorRef: 0.22,
       comparatorBandSize: 6,
-      eagerMode: true,
-      noiseMode: undefined,
-      noiseSensitivity: 0.5,
+      gainNormalizerEnabled: false,
+      minGain: 0.1,
+      maxGain: 1,
+      gainRef: undefined,
+      bandPassEnabled: false,
+      bandPassLowCutoff: 85,
+      bandPassHighCutoff: 400,
     } as Required<RustpotterServiceConfig>, config);
   }
   static isRecordingSupported() {
@@ -143,15 +149,9 @@ export class RustpotterService {
           .then(wasmBytes =>
             this.processor.postMessage({
               command: 'init',
-              sampleRate: audioContext.sampleRate,
-              threshold: this.config.threshold,
-              averagedThreshold: this.config.averagedThreshold,
-              comparatorRef: this.config.comparatorRef,
-              comparatorBandSize: this.config.comparatorBandSize,
-              eagerMode: this.config.eagerMode,
-              noiseMode: this.config.noiseMode,
-              noiseSensitivity: this.config.noiseSensitivity,
               wasmBytes,
+              sampleRate: audioContext.sampleRate,
+              ...this.config,
             })
           );
       } catch (error) {

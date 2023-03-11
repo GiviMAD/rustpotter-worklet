@@ -1,4 +1,3 @@
-export { NoiseDetectionMode } from "rustpotter-web-slim";
 export type RustpotterServiceConfig = {
     workletPath?: string;
     wasmPath?: string;
@@ -6,9 +5,13 @@ export type RustpotterServiceConfig = {
     averagedThreshold?: number;
     comparatorRef?: number;
     comparatorBandSize?: number;
-    eagerMode?: boolean;
-    noiseMode?: NoiseDetectionMode;
-    noiseSensitivity?: number;
+    gainNormalizerEnabled: boolean;
+    minGain: number;
+    maxGain: number;
+    gainRef: number | undefined;
+    bandPassEnabled: boolean;
+    bandPassLowCutoff: number;
+    bandPassHighCutoff: number;
 };
 export declare class RustpotterService {
     private customSourceNode?;
@@ -46,5 +49,3 @@ export declare class RustpotterService {
     onstop: () => void;
     onspot: (name: string, score: number) => void;
 }
-
-

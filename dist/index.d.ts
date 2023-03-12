@@ -5,13 +5,13 @@ export type RustpotterServiceConfig = {
     averagedThreshold?: number;
     comparatorRef?: number;
     comparatorBandSize?: number;
-    gainNormalizerEnabled: boolean;
-    minGain: number;
-    maxGain: number;
-    gainRef: number | undefined;
-    bandPassEnabled: boolean;
-    bandPassLowCutoff: number;
-    bandPassHighCutoff: number;
+    gainNormalizerEnabled?: boolean;
+    minGain?: number;
+    maxGain?: number;
+    gainRef?: number | undefined;
+    bandPassEnabled?: boolean;
+    bandPassLowCutoff?: number;
+    bandPassHighCutoff?: number;
 };
 export declare class RustpotterService {
     private customSourceNode?;

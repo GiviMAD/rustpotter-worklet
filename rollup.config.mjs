@@ -8,7 +8,7 @@ const createConfig = (filename, extraPlugins = [], minify = false) => {
     const output = [
         {
             file: `./dist/${filename}.js`,
-            format: 'umd',
+            format: 'es',
             name: filename,
         },
     ];
@@ -16,7 +16,7 @@ const createConfig = (filename, extraPlugins = [], minify = false) => {
         output.push(
             {
                 file: `./dist/${filename}.min.js`,
-                format: 'umd',
+                format: 'es',
                 name: filename,
                 plugins: [terser()]
             }

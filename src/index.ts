@@ -5,13 +5,13 @@ export type RustpotterServiceConfig = {
   averagedThreshold?: number,
   comparatorRef?: number,
   comparatorBandSize?: number,
-  gainNormalizerEnabled: boolean,
-  minGain: number,
-  maxGain: number,
-  gainRef: number | undefined,
-  bandPassEnabled: boolean,
-  bandPassLowCutoff: number,
-  bandPassHighCutoff: number,
+  gainNormalizerEnabled?: boolean,
+  minGain?: number,
+  maxGain?: number,
+  gainRef?: number | undefined,
+  bandPassEnabled?: boolean,
+  bandPassLowCutoff?: number,
+  bandPassHighCutoff?: number,
 };
 export class RustpotterService {
   private state: string;
@@ -46,8 +46,8 @@ export class RustpotterService {
     } as Required<RustpotterServiceConfig>, config);
   }
   static isRecordingSupported() {
-    const getUserMediaSupported = global.navigator && global.navigator.mediaDevices && global.navigator.mediaDevices.getUserMedia;
-    return AudioContext && getUserMediaSupported && global.WebAssembly;
+    const getUserMediaSupported = window.navigator && window.navigator.mediaDevices && window.navigator.mediaDevices.getUserMedia;
+    return AudioContext && getUserMediaSupported && window.WebAssembly;
   }
   private readonly defaultCallback = ({ data }: any) => {
     switch (data['type']) {
@@ -97,7 +97,7 @@ export class RustpotterService {
     }
   };
   private initAudioContext() {
-    const _AudioContext = global.AudioContext || (global as any).webkitAudioContext as typeof global.AudioContext
+    const _AudioContext = window.AudioContext || (global as any).webkitAudioContext as typeof window.AudioContext
     this.audioContext = this.customSourceNode?.context ? this.customSourceNode.context as AudioContext : new _AudioContext();
   };
   private async registerWorker(audioContext: AudioContext) {
@@ -110,7 +110,7 @@ export class RustpotterService {
       this.processorNode = audioContext.createScriptProcessor(4096, 1, 1);
       this.processorNode.onaudioprocess = ({ inputBuffer }) => this.postBuffers(inputBuffer);
       this.processorNode.connect(audioContext.destination);
-      this.processor = new global.Worker(this.config.workletPath);
+      this.processor = new window.Worker(this.config.workletPath);
     }
   }
   private initSourceNode() {
@@ -118,7 +118,7 @@ export class RustpotterService {
       this.sourceNode = this.customSourceNode;
       return Promise.resolve();
     }
-    return global.navigator.mediaDevices.getUserMedia({ audio: true, video: false }).then(stream => {
+    return window.navigator.mediaDevices.getUserMedia({ audio: true, video: false }).then(stream => {
       this.stream = stream;
       this.sourceNode = this.audioContext.createMediaStreamSource(stream);
     });

@@ -1,3 +1,6 @@
+import { ScoreMode } from 'rustpotter-web-slim';
+export { ScoreMode } from 'rustpotter-web-slim';
+
 /******************************************************************************
 Copyright (c) Microsoft Corporation.
 
@@ -29,15 +32,15 @@ class RustpotterService {
         this.defaultCallback = ({ data }) => {
             switch (data['type']) {
                 case 'detection':
-                    const { name, score } = data;
-                    return this.onspot(name, score);
+                    const { detection } = data;
+                    return this.onspot(detection);
             }
         };
         this.onpause = () => { };
         this.onresume = () => { };
         this.onstart = () => { };
         this.onstop = () => { };
-        this.onspot = (name, score) => { };
+        this.onspot = (detection) => { };
         if (!RustpotterService.isRecordingSupported()) {
             throw new Error("Recording is not supported in this browser");
         }
@@ -48,10 +51,12 @@ class RustpotterService {
             monitorGain: 0,
             recordingGain: 1,
             // rustpotter options
+            minScores: 5,
             threshold: 0.5,
             averagedThreshold: 0.25,
             comparatorRef: 0.22,
             comparatorBandSize: 6,
+            scoreMode: ScoreMode.max,
             gainNormalizerEnabled: false,
             minGain: 0.1,
             maxGain: 1,

@@ -1,5 +1,5 @@
-import './textEncodingPolyfill';
-import type { RustpotterServiceConfig } from './index';
+import './text-encoding-polyfill';
+import type { RustpotterServiceConfigInternal, Detection } from './index';
 import init, { RustpotterDetection, Rustpotter, RustpotterBuilder, SampleFormat } from "rustpotter-web-slim";
 class RustpotterWorkletImpl {
   private wasmLoadedPromise: Promise<void>;
@@ -7,7 +7,7 @@ class RustpotterWorkletImpl {
   private samples: Float32Array;
   private samplesOffset: number;
   private rustpotterFrameSize: number;
-  constructor(wasmBytes: ArrayBuffer, private config: { sampleRate: number, } & RustpotterServiceConfig, private onSpot: (name: string, score: number) => void) {
+  constructor(wasmBytes: ArrayBuffer, private config: { sampleRate: number, } & RustpotterServiceConfigInternal, private onSpot: (detection: Detection) => void) {
     if (!this.config['sampleRate']) {
       throw new Error("sampleRate value is required to record. NOTE: Audio is not resampled!");
     }
@@ -23,6 +23,8 @@ class RustpotterWorkletImpl {
       builder.setThreshold(this.config.threshold);
       builder.setComparatorRef(this.config.comparatorRef);
       builder.setComparatorBandSize(this.config.comparatorBandSize);
+      builder.setMinScores(this.config.minScores);
+      builder.setScoreMode(this.config.scoreMode);
       builder.setGainNormalizerEnabled(this.config.gainNormalizerEnabled);
       builder.setMinGain(this.config.minGain);
       builder.setMaxGain(this.config.maxGain);
@@ -69,7 +71,22 @@ class RustpotterWorkletImpl {
   }
   private handleDetection(detection: RustpotterDetection) {
     if (detection) {
-      this.onSpot(detection.getName(), detection.getScore());
+      const scoreNames = detection.getScoreNames().split("||");
+      const scores = detection.getScores().reduce((acc, v, i) => {
+        const scoreName = scoreNames[i];
+        if (scoreName) {
+          acc[scoreName] = v;
+        }
+        return acc;
+      }, {} as { [key: string]: number });
+      this.onSpot({
+        name: detection.getName(),
+        avgScore: detection.getAvgScore(),
+        score: detection.getScore(),
+        counter: detection.getCounter(),
+        gain: detection.getGain(),
+        scores
+      });
       detection.free();
     }
   }
@@ -106,12 +123,9 @@ if (typeof registerProcessor === 'function') {
             delete data['wasmBytes'];
             this.recorder = new RustpotterWorkletImpl(
               wasmBytes,
-              {
-                ...data
-              },
-              (name, score) => {
-                this.port.postMessage({ type: 'detection', name, score });
-              });
+              data,
+              detection => this.port.postMessage({ type: 'detection', detection }),
+            );
             this.recorder.waitReady()
               .then(() => {
                 this.port.postMessage({ type: 'rustpotter-ready' });
@@ -174,12 +188,9 @@ if (typeof registerProcessor === 'function') {
         delete data['wasmBytes'];
         recorder = new RustpotterWorkletImpl(
           wasmBytes,
-          {
-            ...data
-          },
-          (name, score) => {
-            postMessage({ type: 'detection', name, score });
-          });
+          data,
+          detection => postMessage({ type: 'detection', detection }),
+        );
         recorder.waitReady()
           .then(() => {
             postMessage({ type: 'rustpotter-ready' });

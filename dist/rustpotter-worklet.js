@@ -501,7 +501,7 @@ class RustpotterBuilder {
     * Configures the required number of partial detections
     * to consider a partial detection as a real detection.
     *
-    * Defaults to 10
+    * Defaults to 5
     * @param {number} value
     */
     setMinScores(value) {
@@ -624,7 +624,7 @@ class RustpotterBuilder {
         wasm.rustpotterbuilder_setChannels(this.ptr, value);
     }
     /**
-    * Configures the band-size for the comparator used to match the samples.
+    * Configures the comparator the band size.
     *
     * Defaults to 6
     * @param {number} value
@@ -633,7 +633,7 @@ class RustpotterBuilder {
         wasm.rustpotterbuilder_setComparatorBandSize(this.ptr, value);
     }
     /**
-    * Configures the comparator reference.
+    * Configures the comparator reference, used to express the score as a percent.
     *
     * Defaults to 0.22
     * @param {number} value
@@ -774,6 +774,14 @@ class RustpotterDetection {
         const ret = wasm.rustpotterdetection_getCounter(this.ptr);
         return ret >>> 0;
     }
+    /**
+    * Get gain applied
+    * @returns {number}
+    */
+    getGain() {
+        const ret = wasm.rustpotterdetection_getGain(this.ptr);
+        return ret;
+    }
 }
 
 async function load(module, imports) {
@@ -868,6 +876,8 @@ class RustpotterWorkletImpl {
             builder.setThreshold(this.config.threshold);
             builder.setComparatorRef(this.config.comparatorRef);
             builder.setComparatorBandSize(this.config.comparatorBandSize);
+            builder.setMinScores(this.config.minScores);
+            builder.setScoreMode(this.config.scoreMode);
             builder.setGainNormalizerEnabled(this.config.gainNormalizerEnabled);
             builder.setMinGain(this.config.minGain);
             builder.setMaxGain(this.config.maxGain);
@@ -918,7 +928,22 @@ class RustpotterWorkletImpl {
     }
     handleDetection(detection) {
         if (detection) {
-            this.onSpot(detection.getName(), detection.getScore());
+            const scoreNames = detection.getScoreNames().split("||");
+            const scores = detection.getScores().reduce((acc, v, i) => {
+                const scoreName = scoreNames[i];
+                if (scoreName) {
+                    acc[scoreName] = v;
+                }
+                return acc;
+            }, {});
+            this.onSpot({
+                name: detection.getName(),
+                avgScore: detection.getAvgScore(),
+                score: detection.getScore(),
+                counter: detection.getCounter(),
+                gain: detection.getGain(),
+                scores
+            });
             detection.free();
         }
     }
@@ -949,9 +974,7 @@ if (typeof registerProcessor === 'function') {
                     case 'init':
                         const wasmBytes = data['wasmBytes'];
                         delete data['wasmBytes'];
-                        this.recorder = new RustpotterWorkletImpl(wasmBytes, Object.assign({}, data), (name, score) => {
-                            this.port.postMessage({ type: 'detection', name, score });
-                        });
+                        this.recorder = new RustpotterWorkletImpl(wasmBytes, data, detection => this.port.postMessage({ type: 'detection', detection }));
                         this.recorder.waitReady()
                             .then(() => {
                             this.port.postMessage({ type: 'rustpotter-ready' });
@@ -1014,9 +1037,7 @@ else {
             case 'init':
                 const wasmBytes = data['wasmBytes'];
                 delete data['wasmBytes'];
-                recorder = new RustpotterWorkletImpl(wasmBytes, Object.assign({}, data), (name, score) => {
-                    postMessage({ type: 'detection', name, score });
-                });
+                recorder = new RustpotterWorkletImpl(wasmBytes, data, detection => postMessage({ type: 'detection', detection }));
                 recorder.waitReady()
                     .then(() => {
                     postMessage({ type: 'rustpotter-ready' });

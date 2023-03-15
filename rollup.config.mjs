@@ -4,7 +4,7 @@ import copy from 'rollup-plugin-copy';
 import terser from '@rollup/plugin-terser';
 const plugins = [typescript()];
 
-const createConfig = (filename, extraPlugins = [], minify = false) => {
+const createConfig = (filename, extraPlugins = [], external = [], minify = false) => {
     const output = [
         {
             file: `./dist/${filename}.js`,
@@ -23,6 +23,7 @@ const createConfig = (filename, extraPlugins = [], minify = false) => {
         );
     }
     return {
+        external,
         input: `src/${filename}.ts`,
         output,
         context: 'this',
@@ -32,6 +33,6 @@ const createConfig = (filename, extraPlugins = [], minify = false) => {
 
 
 export default [
-    createConfig('index', [copy({ targets: [{ src: './node_modules/rustpotter-web-slim/rustpotter_wasm_bg.wasm', dest: './dist' }] })]),
-    createConfig('rustpotterWorklet', [nodeResolve()], true),
+    createConfig('index', [copy({ targets: [{ src: './node_modules/rustpotter-web-slim/rustpotter_wasm_bg.wasm', dest: './dist' }] })], ['rustpotter-web-slim']),
+    createConfig('rustpotter-worklet', [nodeResolve()], [], true),
 ]

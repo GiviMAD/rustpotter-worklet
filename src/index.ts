@@ -1,17 +1,30 @@
-export type RustpotterServiceConfig = {
-  workletPath?: string,
-  wasmPath?: string,
-  threshold?: number,
-  averagedThreshold?: number,
-  comparatorRef?: number,
-  comparatorBandSize?: number,
-  gainNormalizerEnabled?: boolean,
-  minGain?: number,
-  maxGain?: number,
-  gainRef?: number | undefined,
-  bandPassEnabled?: boolean,
-  bandPassLowCutoff?: number,
-  bandPassHighCutoff?: number,
+import { ScoreMode } from "rustpotter-web-slim";
+export { ScoreMode } from "rustpotter-web-slim";
+export type RustpotterServiceConfig = Partial<RustpotterServiceConfigInternal>;
+export type Detection = {
+  name: string,
+  score: number,
+  avgScore: number,
+  scores: { [string: string]: number },
+  counter: number,
+  gain: number,
+};
+export type RustpotterServiceConfigInternal = {
+  workletPath: string,
+  wasmPath: string,
+  threshold: number,
+  averagedThreshold: number,
+  comparatorRef: number,
+  comparatorBandSize: number,
+  minScores: number,
+  scoreMode: ScoreMode,
+  gainNormalizerEnabled: boolean,
+  minGain: number,
+  maxGain: number,
+  gainRef?: number,
+  bandPassEnabled: boolean,
+  bandPassLowCutoff: number,
+  bandPassHighCutoff: number,
 };
 export class RustpotterService {
   private state: string;
@@ -20,7 +33,7 @@ export class RustpotterService {
   private sourceNode?: MediaStreamAudioSourceNode;
   private processor: MessagePort | Worker;
   private processorNode: AudioWorkletNode | ScriptProcessorNode;
-  private config: Required<RustpotterServiceConfig>
+  private config: RustpotterServiceConfigInternal;
   constructor(config: RustpotterServiceConfig = {} as any, private customSourceNode?: MediaStreamAudioSourceNode) {
     if (!RustpotterService.isRecordingSupported()) {
       throw new Error("Recording is not supported in this browser");
@@ -32,10 +45,12 @@ export class RustpotterService {
       monitorGain: 0,
       recordingGain: 1,
       // rustpotter options
+      minScores: 5,
       threshold: 0.5,
       averagedThreshold: 0.25,
       comparatorRef: 0.22,
       comparatorBandSize: 6,
+      scoreMode: ScoreMode.max,
       gainNormalizerEnabled: false,
       minGain: 0.1,
       maxGain: 1,
@@ -43,7 +58,7 @@ export class RustpotterService {
       bandPassEnabled: false,
       bandPassLowCutoff: 85,
       bandPassHighCutoff: 400,
-    } as Required<RustpotterServiceConfig>, config);
+    } as RustpotterServiceConfigInternal, config);
   }
   static isRecordingSupported() {
     const getUserMediaSupported = window.navigator && window.navigator.mediaDevices && window.navigator.mediaDevices.getUserMedia;
@@ -52,8 +67,8 @@ export class RustpotterService {
   private readonly defaultCallback = ({ data }: any) => {
     switch (data['type']) {
       case 'detection':
-        const { name, score } = data;
-        return this.onspot(name, score);
+        const { detection } = data;
+        return this.onspot(detection);
     }
   };
   clearStream() {
@@ -258,5 +273,5 @@ export class RustpotterService {
   onresume = () => { };
   onstart = () => { };
   onstop = () => { };
-  onspot = (name: string, score: number) => { };
+  onspot = (detection: Detection) => { };
 }

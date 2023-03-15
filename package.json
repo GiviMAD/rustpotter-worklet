@@ -20,7 +20,7 @@
   ],
   "keywords": [],
   "dependencies": {
-    "rustpotter-web-slim": "2.0.0"
+    "rustpotter-web-slim": "2.0.1"
   },
   "devDependencies": {
     "@rollup/plugin-node-resolve": "^15.0.1",

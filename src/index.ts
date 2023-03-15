@@ -1,15 +1,30 @@
-import { NoiseDetectionMode } from "rustpotter-web-slim";
-export { NoiseDetectionMode } from "rustpotter-web-slim";
-export type RustpotterServiceConfig = {
-  workletPath?: string,
-  wasmPath?: string,
-  threshold?: number,
-  averagedThreshold?: number,
-  comparatorRef?: number,
-  comparatorBandSize?: number,
-  eagerMode?: boolean,
-  noiseMode?: NoiseDetectionMode,
-  noiseSensitivity?: number,
+import { ScoreMode } from "rustpotter-web-slim";
+export { ScoreMode } from "rustpotter-web-slim";
+export type RustpotterServiceConfig = Partial<RustpotterServiceConfigInternal>;
+export type Detection = {
+  name: string,
+  score: number,
+  avgScore: number,
+  scores: { [string: string]: number },
+  counter: number,
+  gain: number,
+};
+export type RustpotterServiceConfigInternal = {
+  workletPath: string,
+  wasmPath: string,
+  threshold: number,
+  averagedThreshold: number,
+  comparatorRef: number,
+  comparatorBandSize: number,
+  minScores: number,
+  scoreMode: ScoreMode,
+  gainNormalizerEnabled: boolean,
+  minGain: number,
+  maxGain: number,
+  gainRef?: number,
+  bandPassEnabled: boolean,
+  bandPassLowCutoff: number,
+  bandPassHighCutoff: number,
 };
 export class RustpotterService {
   private state: string;
@@ -18,7 +33,7 @@ export class RustpotterService {
   private sourceNode?: MediaStreamAudioSourceNode;
   private processor: MessagePort | Worker;
   private processorNode: AudioWorkletNode | ScriptProcessorNode;
-  private config: Required<RustpotterServiceConfig>
+  private config: RustpotterServiceConfigInternal;
   constructor(config: RustpotterServiceConfig = {} as any, private customSourceNode?: MediaStreamAudioSourceNode) {
     if (!RustpotterService.isRecordingSupported()) {
       throw new Error("Recording is not supported in this browser");
@@ -30,24 +45,30 @@ export class RustpotterService {
       monitorGain: 0,
       recordingGain: 1,
       // rustpotter options
+      minScores: 5,
       threshold: 0.5,
       averagedThreshold: 0.25,
       comparatorRef: 0.22,
       comparatorBandSize: 6,
-      eagerMode: true,
-      noiseMode: undefined,
-      noiseSensitivity: 0.5,
-    } as Required<RustpotterServiceConfig>, config);
+      scoreMode: ScoreMode.max,
+      gainNormalizerEnabled: false,
+      minGain: 0.1,
+      maxGain: 1,
+      gainRef: undefined,
+      bandPassEnabled: false,
+      bandPassLowCutoff: 85,
+      bandPassHighCutoff: 400,
+    } as RustpotterServiceConfigInternal, config);
   }
   static isRecordingSupported() {
-    const getUserMediaSupported = global.navigator && global.navigator.mediaDevices && global.navigator.mediaDevices.getUserMedia;
-    return AudioContext && getUserMediaSupported && global.WebAssembly;
+    const getUserMediaSupported = window.navigator && window.navigator.mediaDevices && window.navigator.mediaDevices.getUserMedia;
+    return AudioContext && getUserMediaSupported && window.WebAssembly;
   }
   private readonly defaultCallback = ({ data }: any) => {
     switch (data['type']) {
       case 'detection':
-        const { name, score } = data;
-        return this.onspot(name, score);
+        const { detection } = data;
+        return this.onspot(detection);
     }
   };
   clearStream() {
@@ -91,7 +112,7 @@ export class RustpotterService {
     }
   };
   private initAudioContext() {
-    const _AudioContext = global.AudioContext || (global as any).webkitAudioContext as typeof global.AudioContext
+    const _AudioContext = window.AudioContext || (global as any).webkitAudioContext as typeof window.AudioContext
     this.audioContext = this.customSourceNode?.context ? this.customSourceNode.context as AudioContext : new _AudioContext();
   };
   private async registerWorker(audioContext: AudioContext) {
@@ -104,7 +125,7 @@ export class RustpotterService {
       this.processorNode = audioContext.createScriptProcessor(4096, 1, 1);
       this.processorNode.onaudioprocess = ({ inputBuffer }) => this.postBuffers(inputBuffer);
       this.processorNode.connect(audioContext.destination);
-      this.processor = new global.Worker(this.config.workletPath);
+      this.processor = new window.Worker(this.config.workletPath);
     }
   }
   private initSourceNode() {
@@ -112,7 +133,7 @@ export class RustpotterService {
       this.sourceNode = this.customSourceNode;
       return Promise.resolve();
     }
-    return global.navigator.mediaDevices.getUserMedia({ audio: true, video: false }).then(stream => {
+    return window.navigator.mediaDevices.getUserMedia({ audio: true, video: false }).then(stream => {
       this.stream = stream;
       this.sourceNode = this.audioContext.createMediaStreamSource(stream);
     });
@@ -143,15 +164,9 @@ export class RustpotterService {
           .then(wasmBytes =>
             this.processor.postMessage({
               command: 'init',
-              sampleRate: audioContext.sampleRate,
-              threshold: this.config.threshold,
-              averagedThreshold: this.config.averagedThreshold,
-              comparatorRef: this.config.comparatorRef,
-              comparatorBandSize: this.config.comparatorBandSize,
-              eagerMode: this.config.eagerMode,
-              noiseMode: this.config.noiseMode,
-              noiseSensitivity: this.config.noiseSensitivity,
               wasmBytes,
+              sampleRate: audioContext.sampleRate,
+              ...this.config,
             })
           );
       } catch (error) {
@@ -258,5 +273,5 @@ export class RustpotterService {
   onresume = () => { };
   onstart = () => { };
   onstop = () => { };
-  onspot = (name: string, score: number) => { };
+  onspot = (detection: Detection) => { };
 }

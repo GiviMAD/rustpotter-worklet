@@ -1,1 +1,276 @@
-!function(e,t){if("object"==typeof exports&&"object"==typeof module)module.exports=t();else if("function"==typeof define&&define.amd)define([],t);else{var s=t();for(var o in s)("object"==typeof exports?exports:e)[o]=s[o]}}("undefined"!=typeof self?self:this,(()=>(()=>{"use strict";var e={d:(t,s)=>{for(var o in s)e.o(s,o)&&!e.o(t,o)&&Object.defineProperty(t,o,{enumerable:!0,get:s[o]})}};e.g=function(){if("object"==typeof globalThis)return globalThis;try{return this||new Function("return this")()}catch(e){if("object"==typeof window)return window}}(),e.o=(e,t)=>Object.prototype.hasOwnProperty.call(e,t),e.r=e=>{"undefined"!=typeof Symbol&&Symbol.toStringTag&&Object.defineProperty(e,Symbol.toStringTag,{value:"Module"}),Object.defineProperty(e,"__esModule",{value:!0})};var t={};e.r(t),e.d(t,{NoiseDetectionMode:()=>o,RustpotterService:()=>i});new TextDecoder("utf-8",{ignoreBOM:!0,fatal:!0}).decode(),new Uint8Array;const s=new Array(32).fill(void 0);s.push(void 0,null,!0,!1),s.length,new Int32Array,new Uint32Array,new Uint16Array,new Float32Array;const o=Object.freeze({easiest:0,0:"easiest",easy:1,1:"easy",normal:2,2:"normal",hard:3,3:"hard",hardest:4,4:"hardest"});Object.freeze({int:0,0:"int",float:1,1:"float"});var r=function(e,t,s,o){return new(s||(s=Promise))((function(r,i){function n(e){try{c(o.next(e))}catch(e){i(e)}}function a(e){try{c(o.throw(e))}catch(e){i(e)}}function c(e){var t;e.done?r(e.value):(t=e.value,t instanceof s?t:new s((function(e){e(t)}))).then(n,a)}c((o=o.apply(e,t||[])).next())}))};class i{constructor(e={},t){if(this.customSourceNode=t,this.defaultCallback=({data:e})=>{if("detection"===e.type){const{name:t,score:s}=e;return this.onspot(t,s)}},this.onpause=()=>{},this.onresume=()=>{},this.onstart=()=>{},this.onstop=()=>{},this.onspot=(e,t)=>{},!i.isRecordingSupported())throw new Error("Recording is not supported in this browser");this.state="inactive",this.config=Object.assign({workletPath:"/rustpotterWorker.js",wasmPath:"/rustpotter_wasm_bg.wasm",monitorGain:0,recordingGain:1,threshold:.5,averagedThreshold:.25,comparatorRef:.22,comparatorBandSize:6,eagerMode:!0,noiseMode:void 0,noiseSensitivity:.5},e)}static isRecordingSupported(){const t=e.g.navigator&&e.g.navigator.mediaDevices&&e.g.navigator.mediaDevices.getUserMedia;return AudioContext&&t&&e.g.WebAssembly}clearStream(){this.stream&&(this.stream.getTracks?this.stream.getTracks().forEach((e=>e.stop())):this.stream.stop())}close(){return this.sourceNode&&this.sourceNode.disconnect(),this.clearStream(),this.processor&&(this.processorNode.disconnect(),this.processor.postMessage({command:"close"})),!this.customSourceNode&&this.audioContext?this.audioContext.close():Promise.resolve()}postBuffers(e){if("recording"===this.state){const t=[];for(let s=0;s<e.numberOfChannels;s++)t[s]=e.getChannelData(s);this.processor.postMessage({command:"process",buffers:t})}}initAudioContext(){var t;const s=e.g.AudioContext||e.g.webkitAudioContext;this.audioContext=(null===(t=this.customSourceNode)||void 0===t?void 0:t.context)?this.customSourceNode.context:new s}registerWorker(t){return r(this,void 0,void 0,(function*(){t.audioWorklet?(yield t.audioWorklet.addModule(this.config.workletPath),this.processorNode=new AudioWorkletNode(t,"rustpotter-worklet",{numberOfOutputs:0}),this.processor=this.processorNode.port):(console.log("audioWorklet support not detected. Falling back to scriptProcessor"),this.processorNode=t.createScriptProcessor(4096,1,1),this.processorNode.onaudioprocess=({inputBuffer:e})=>this.postBuffers(e),this.processorNode.connect(t.destination),this.processor=new e.g.Worker(this.config.workletPath))}))}initSourceNode(){return this.customSourceNode?(this.sourceNode=this.customSourceNode,Promise.resolve()):e.g.navigator.mediaDevices.getUserMedia({audio:!0,video:!1}).then((e=>{this.stream=e,this.sourceNode=this.audioContext.createMediaStreamSource(e)}))}setupListener(){this.processor.removeEventListener("message",this.defaultCallback),this.processor.addEventListener("message",this.defaultCallback)}initWorker(e){return new Promise(((t,s)=>{const o=({data:e})=>{switch(e.type){case"rustpotter-ready":return this.processor.removeEventListener("message",o),this.setupListener(),t();case"rustpotter-error":return this.processor.removeEventListener("message",o),s(new Error("Unable to start rustpotter worklet"))}};try{this.processor.addEventListener("message",o),this.processor.start&&this.processor.start(),this.fetchResource(this.config.wasmPath).then((t=>this.processor.postMessage({command:"init",sampleRate:e.sampleRate,threshold:this.config.threshold,averagedThreshold:this.config.averagedThreshold,comparatorRef:this.config.comparatorRef,comparatorBandSize:this.config.comparatorBandSize,eagerMode:this.config.eagerMode,noiseMode:this.config.noiseMode,noiseSensitivity:this.config.noiseSensitivity,wasmBytes:t})))}catch(e){s(e)}}))}getProcessorNode(e){return r(this,void 0,void 0,(function*(){return this.state="external",yield this.registerWorker(e),yield this.initWorker(e),this.processorNode}))}pause(){return"recording"===this.state&&(this.state="paused",this.sourceNode.disconnect(),this.onpause()),Promise.resolve()}resume(){"paused"===this.state&&(this.state="recording",this.sourceNode.connect(this.processorNode),this.onresume())}start(){return"inactive"===this.state?(this.state="loading",this.initAudioContext(),this.audioContext.resume().then((()=>this.registerWorker(this.audioContext))).then((()=>Promise.all([this.initSourceNode(),this.initWorker(this.audioContext)]))).then((()=>{this.state="recording",this.sourceNode.connect(this.processorNode),this.onstart()})).catch((e=>{throw this.state="inactive",e}))):Promise.resolve()}stop(){return"paused"===this.state||"recording"===this.state?(this.state="inactive",this.sourceNode.connect(this.processorNode),this.clearStream(),new Promise((e=>{const t=({data:s})=>{"done"===s.type&&(this.processor.removeEventListener("message",t),e())};this.processor.addEventListener("message",t),this.processor.start&&this.processor.start(),this.processor.postMessage({command:"done"})})).then((()=>this.finish()))):Promise.resolve()}getState(){return this.state}addWakewordByPath(e,t){return r(this,void 0,void 0,(function*(){return this.fetchResource(e,t).then((e=>this.addWakeword(e)))}))}addWakeword(e){return r(this,void 0,void 0,(function*(){return new Promise(((t,s)=>{const o=({data:e})=>{switch(e.type){case"wakeword-loaded":return this.processor.removeEventListener("message",o),t();case"wakeword-error":return this.processor.removeEventListener("message",o),s(new Error("Unable to load wakeword"))}};this.processor.addEventListener("message",o),this.processor.postMessage({command:"wakeword",wakewordBytes:e})}))}))}fetchResource(e,t){return window.fetch(e,{headers:t}).then((e=>e.arrayBuffer()))}finish(){this.onstop()}}return t})()));
+import { ScoreMode } from 'rustpotter-web-slim';
+export { ScoreMode } from 'rustpotter-web-slim';
+
+/******************************************************************************
+Copyright (c) Microsoft Corporation.
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS SOFTWARE.
+***************************************************************************** */
+
+function __awaiter(thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+}
+
+class RustpotterService {
+    constructor(config = {}, customSourceNode) {
+        this.customSourceNode = customSourceNode;
+        this.defaultCallback = ({ data }) => {
+            switch (data['type']) {
+                case 'detection':
+                    const { detection } = data;
+                    return this.onspot(detection);
+            }
+        };
+        this.onpause = () => { };
+        this.onresume = () => { };
+        this.onstart = () => { };
+        this.onstop = () => { };
+        this.onspot = (detection) => { };
+        if (!RustpotterService.isRecordingSupported()) {
+            throw new Error("Recording is not supported in this browser");
+        }
+        this.state = "inactive";
+        this.config = Object.assign({
+            workletPath: '/rustpotterWorker.js',
+            wasmPath: '/rustpotter_wasm_bg.wasm',
+            monitorGain: 0,
+            recordingGain: 1,
+            // rustpotter options
+            minScores: 5,
+            threshold: 0.5,
+            averagedThreshold: 0.25,
+            comparatorRef: 0.22,
+            comparatorBandSize: 6,
+            scoreMode: ScoreMode.max,
+            gainNormalizerEnabled: false,
+            minGain: 0.1,
+            maxGain: 1,
+            gainRef: undefined,
+            bandPassEnabled: false,
+            bandPassLowCutoff: 85,
+            bandPassHighCutoff: 400,
+        }, config);
+    }
+    static isRecordingSupported() {
+        const getUserMediaSupported = window.navigator && window.navigator.mediaDevices && window.navigator.mediaDevices.getUserMedia;
+        return AudioContext && getUserMediaSupported && window.WebAssembly;
+    }
+    clearStream() {
+        if (this.stream) {
+            if (this.stream.getTracks) {
+                this.stream.getTracks().forEach(track => track.stop());
+            }
+            else {
+                this.stream.stop();
+            }
+        }
+    }
+    close() {
+        if (this.sourceNode) {
+            this.sourceNode.disconnect();
+        }
+        this.clearStream();
+        if (this.processor) {
+            this.processorNode.disconnect();
+            this.processor.postMessage({ command: "close" });
+        }
+        if (!this.customSourceNode && this.audioContext) {
+            return this.audioContext.close();
+        }
+        return Promise.resolve();
+    }
+    postBuffers(inputBuffer) {
+        if (this.state === "recording") {
+            const buffers = [];
+            for (let i = 0; i < inputBuffer.numberOfChannels; i++) {
+                buffers[i] = inputBuffer.getChannelData(i);
+            }
+            this.processor.postMessage({
+                command: "process",
+                buffers: buffers
+            });
+        }
+    }
+    ;
+    initAudioContext() {
+        var _a;
+        const _AudioContext = window.AudioContext || global.webkitAudioContext;
+        this.audioContext = ((_a = this.customSourceNode) === null || _a === void 0 ? void 0 : _a.context) ? this.customSourceNode.context : new _AudioContext();
+    }
+    ;
+    registerWorker(audioContext) {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (audioContext.audioWorklet) {
+                yield audioContext.audioWorklet.addModule(this.config.workletPath);
+                this.processorNode = new AudioWorkletNode(audioContext, 'rustpotter-worklet', { numberOfOutputs: 0 });
+                this.processor = this.processorNode.port;
+            }
+            else {
+                console.log('audioWorklet support not detected. Falling back to scriptProcessor');
+                this.processorNode = audioContext.createScriptProcessor(4096, 1, 1);
+                this.processorNode.onaudioprocess = ({ inputBuffer }) => this.postBuffers(inputBuffer);
+                this.processorNode.connect(audioContext.destination);
+                this.processor = new window.Worker(this.config.workletPath);
+            }
+        });
+    }
+    initSourceNode() {
+        if (this.customSourceNode) {
+            this.sourceNode = this.customSourceNode;
+            return Promise.resolve();
+        }
+        return window.navigator.mediaDevices.getUserMedia({ audio: true, video: false }).then(stream => {
+            this.stream = stream;
+            this.sourceNode = this.audioContext.createMediaStreamSource(stream);
+        });
+    }
+    ;
+    setupListener() {
+        this.processor.removeEventListener("message", this.defaultCallback);
+        this.processor.addEventListener("message", this.defaultCallback);
+    }
+    initWorker(audioContext) {
+        return new Promise((resolve, reject) => {
+            const callback = ({ data }) => {
+                switch (data['type']) {
+                    case 'rustpotter-ready':
+                        this.processor.removeEventListener("message", callback);
+                        this.setupListener();
+                        return resolve();
+                    case 'rustpotter-error':
+                        this.processor.removeEventListener("message", callback);
+                        return reject(new Error("Unable to start rustpotter worklet"));
+                }
+            };
+            try {
+                this.processor.addEventListener("message", callback);
+                if (this.processor.start) {
+                    this.processor.start();
+                }
+                this.fetchResource(this.config.wasmPath)
+                    .then(wasmBytes => this.processor.postMessage(Object.assign({ command: 'init', wasmBytes, sampleRate: audioContext.sampleRate }, this.config)));
+            }
+            catch (error) {
+                reject(error);
+            }
+        });
+    }
+    getProcessorNode(audioContext) {
+        return __awaiter(this, void 0, void 0, function* () {
+            this.state = "external";
+            yield this.registerWorker(audioContext);
+            yield this.initWorker(audioContext);
+            return this.processorNode;
+        });
+    }
+    pause() {
+        if (this.state === "recording") {
+            this.state = "paused";
+            this.sourceNode.disconnect();
+            this.onpause();
+        }
+        return Promise.resolve();
+    }
+    resume() {
+        if (this.state === "paused") {
+            this.state = "recording";
+            this.sourceNode.connect(this.processorNode);
+            this.onresume();
+        }
+    }
+    start() {
+        if (this.state === "inactive") {
+            this.state = 'loading';
+            this.initAudioContext();
+            return this.audioContext.resume()
+                .then(() => this.registerWorker(this.audioContext))
+                .then(() => Promise.all([this.initSourceNode(), this.initWorker(this.audioContext)]))
+                .then(() => {
+                this.state = "recording";
+                this.sourceNode.connect(this.processorNode);
+                this.onstart();
+            })
+                .catch(error => {
+                this.state = 'inactive';
+                throw error;
+            });
+        }
+        return Promise.resolve();
+    }
+    stop() {
+        if (this.state === "paused" || this.state === "recording") {
+            this.state = "inactive";
+            // macOS and iOS requires the source to remain connected (in case stopped while paused)
+            this.sourceNode.connect(this.processorNode);
+            this.clearStream();
+            return new Promise(resolve => {
+                const callback = ({ data }) => {
+                    if (data["type"] === 'done') {
+                        this.processor.removeEventListener("message", callback);
+                        resolve();
+                    }
+                };
+                this.processor.addEventListener("message", callback);
+                if (this.processor.start) {
+                    this.processor.start();
+                }
+                this.processor.postMessage({ command: "done" });
+            }).then(() => this.finish());
+        }
+        return Promise.resolve();
+    }
+    getState() {
+        return this.state;
+    }
+    addWakewordByPath(path, headers) {
+        return __awaiter(this, void 0, void 0, function* () {
+            return this.fetchResource(path, headers)
+                .then(buffer => this.addWakeword(buffer));
+        });
+    }
+    addWakeword(wakewordBytes) {
+        return __awaiter(this, void 0, void 0, function* () {
+            return new Promise((resolve, reject) => {
+                const callback = ({ data }) => {
+                    switch (data['type']) {
+                        case 'wakeword-loaded':
+                            this.processor.removeEventListener("message", callback);
+                            return resolve();
+                        case 'wakeword-error':
+                            this.processor.removeEventListener("message", callback);
+                            return reject(new Error("Unable to load wakeword"));
+                    }
+                };
+                this.processor.addEventListener("message", callback);
+                this.processor.postMessage({
+                    command: 'wakeword',
+                    wakewordBytes,
+                });
+            });
+        });
+    }
+    fetchResource(path, headers) {
+        return window.fetch(path, { headers })
+            .then(response => response.arrayBuffer());
+    }
+    finish() {
+        this.onstop();
+    }
+}
+
+export { RustpotterService };

@@ -900,30 +900,26 @@ class RustpotterWorkletImpl {
     }
     process(buffers) {
         const channelBuffer = buffers[0];
-        const nextOffset = this.samplesOffset + channelBuffer.length;
-        if (nextOffset <= this.rustpotterFrameSize) {
-            this.samples.set(channelBuffer, this.samplesOffset);
-            if (nextOffset == this.rustpotterFrameSize - 1) {
-                this.handleDetection(this.rustpotter.processFloat32(this.samples));
-                this.samplesOffset = 0;
-            }
-            else {
-                this.samplesOffset = nextOffset;
-            }
-        }
-        else {
-            var requiresSamples = this.rustpotterFrameSize - this.samplesOffset;
-            this.samples.set(channelBuffer.subarray(0, requiresSamples), this.samplesOffset);
+        const requiredSamples = this.rustpotterFrameSize - this.samplesOffset;
+        if (channelBuffer.length >= requiredSamples) {
+            this.samples.set(channelBuffer.subarray(0, requiredSamples), this.samplesOffset);
             this.handleDetection(this.rustpotter.processFloat32(this.samples));
-            var remaining = channelBuffer.subarray(requiresSamples);
-            if (remaining.length >= channelBuffer.length) {
+            const remaining = channelBuffer.subarray(requiredSamples);
+            if (remaining.length >= this.rustpotterFrameSize) {
                 this.samplesOffset = 0;
                 this.process([remaining]);
             }
-            else {
+            else if (remaining.length > 0) {
+                this.samplesOffset = remaining.length;
                 this.samples.set(remaining, 0);
-                this.samplesOffset = (channelBuffer.length - requiresSamples);
             }
+            else {
+                this.samplesOffset = 0;
+            }
+        }
+        else {
+            this.samples.set(channelBuffer, this.samplesOffset);
+            this.samplesOffset += channelBuffer.length;
         }
     }
     handleDetection(detection) {

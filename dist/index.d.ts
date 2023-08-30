@@ -1,5 +1,5 @@
-import { ScoreMode } from "rustpotter-web-slim";
-export { ScoreMode } from "rustpotter-web-slim";
+import { ScoreMode, VADMode } from "rustpotter-web-slim";
+export { ScoreMode, VADMode } from "rustpotter-web-slim";
 export type RustpotterServiceConfig = Partial<RustpotterServiceConfigInternal>;
 export type Detection = {
     name: string;
@@ -16,10 +16,11 @@ export type RustpotterServiceConfigInternal = {
     wasmPath: string;
     threshold: number;
     averagedThreshold: number;
-    comparatorRef: number;
-    comparatorBandSize: number;
+    scoreRef: number;
+    bandSize: number;
     minScores: number;
     scoreMode: ScoreMode;
+    vadMode: VADMode | null;
     gainNormalizerEnabled: boolean;
     minGain: number;
     maxGain: number;

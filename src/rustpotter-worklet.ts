@@ -6,7 +6,7 @@ class RustpotterWorkletImpl {
   private rustpotter: Rustpotter;
   private samples: Float32Array;
   private samplesOffset: number;
-  private rustpotterFrameSize: number;
+  private rustpotterInputSampleNumber: number;
   constructor(wasmBytes: ArrayBuffer, private config: { sampleRate: number, } & RustpotterServiceConfigInternal, private onSpot: (detection: Detection) => void) {
     if (!this.config['sampleRate']) {
       throw new Error("sampleRate value is required to record. NOTE: Audio is not resampled!");
@@ -16,15 +16,15 @@ class RustpotterWorkletImpl {
       await init(WebAssembly.compile(wasmBytes));
       const builder = RustpotterBuilder.new();
       builder.setSampleRate(this.config.sampleRate);
-      builder.setSampleFormat(SampleFormat.float);
-      builder.setBitsPerSample(32);
+      builder.setSampleFormat(SampleFormat.f32);
       builder.setChannels(1);
       builder.setAveragedThreshold(this.config.averagedThreshold);
       builder.setThreshold(this.config.threshold);
-      builder.setComparatorRef(this.config.comparatorRef);
-      builder.setComparatorBandSize(this.config.comparatorBandSize);
+      builder.setScoreRef(this.config.scoreRef);
+      builder.setBandSize(this.config.bandSize);
       builder.setMinScores(this.config.minScores);
       builder.setScoreMode(this.config.scoreMode);
+      builder.setVADMode(this.config.vadMode);
       builder.setGainNormalizerEnabled(this.config.gainNormalizerEnabled);
       builder.setMinGain(this.config.minGain);
       builder.setMaxGain(this.config.maxGain);
@@ -33,9 +33,9 @@ class RustpotterWorkletImpl {
       builder.setBandPassLowCutoff(this.config.bandPassLowCutoff);
       builder.setBandPassHighCutoff(this.config.bandPassHighCutoff);
       this.rustpotter = builder.build();
-      this.rustpotterFrameSize = this.rustpotter.getFrameSize();
-      this.samples = new Float32Array(this.rustpotterFrameSize);
       builder.free();
+      this.rustpotterInputSampleNumber = this.rustpotter.getSamplesPerFrame();
+      this.samples = new Float32Array(this.rustpotterInputSampleNumber);
     })();
   }
   waitReady() {
@@ -46,12 +46,12 @@ class RustpotterWorkletImpl {
   }
   process(buffers: Float32Array[]) {
     const channelBuffer = buffers[0];
-    const requiredSamples = this.rustpotterFrameSize - this.samplesOffset;
+    const requiredSamples = this.rustpotterInputSampleNumber - this.samplesOffset;
     if (channelBuffer.length >= requiredSamples) {
       this.samples.set(channelBuffer.subarray(0, requiredSamples), this.samplesOffset);
-      this.handleDetection(this.rustpotter.processFloat32(this.samples));
+      this.handleDetection(this.rustpotter.processF32(this.samples));
       const remaining = channelBuffer.subarray(requiredSamples);
-      if (remaining.length >= this.rustpotterFrameSize) {
+      if (remaining.length >= this.rustpotterInputSampleNumber) {
         this.samplesOffset = 0;
         this.process([remaining]);
       } else if (remaining.length > 0) {

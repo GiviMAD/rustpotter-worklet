@@ -1,5 +1,5 @@
 import { ScoreMode } from 'rustpotter-web-slim';
-export { ScoreMode } from 'rustpotter-web-slim';
+export { ScoreMode, VADMode } from 'rustpotter-web-slim';
 
 /******************************************************************************
 Copyright (c) Microsoft Corporation.
@@ -54,8 +54,9 @@ class RustpotterService {
             minScores: 5,
             threshold: 0.5,
             averagedThreshold: 0.25,
-            comparatorRef: 0.22,
-            comparatorBandSize: 6,
+            scoreRef: 0.22,
+            bandSize: 6,
+            vadMode: null,
             scoreMode: ScoreMode.max,
             gainNormalizerEnabled: false,
             minGain: 0.1,

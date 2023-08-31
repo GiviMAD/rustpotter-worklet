@@ -29,6 +29,20 @@ export default [
             },
         ],
         plugins: [typescript(), nodeResolve()],
-        context: 'this',
+    },
+    {
+        input: `src/rustpotter-worker.ts`,
+        output: [
+            {
+                file: `./dist/rustpotter-worker.js`,
+                format: 'es',
+            },
+            {
+                file: `./dist/rustpotter-worker.min.js`,
+                format: 'es',
+                plugins: [terser()]
+            },
+        ],
+        plugins: [typescript(), nodeResolve()],
     },
 ];

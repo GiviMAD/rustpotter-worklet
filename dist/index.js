@@ -1,56 +1,46 @@
 import { ScoreMode } from 'rustpotter-web-slim';
 export { ScoreMode, VADMode } from 'rustpotter-web-slim';
 
-/******************************************************************************
-Copyright (c) Microsoft Corporation.
-
-Permission to use, copy, modify, and/or distribute this software for any
-purpose with or without fee is hereby granted.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
-REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
-AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
-INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
-LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
-OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
-PERFORMANCE OF THIS SOFTWARE.
-***************************************************************************** */
-
-function __awaiter(thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-}
+var WorkerOutCmd;
+(function (WorkerOutCmd) {
+    WorkerOutCmd["STARTED"] = "started";
+    WorkerOutCmd["STOPPED"] = "stopped";
+    WorkerOutCmd["DETECTION"] = "detection";
+    WorkerOutCmd["PORT_STARTED"] = "port_started";
+    WorkerOutCmd["PORT_STOPPED"] = "port_stopped";
+    WorkerOutCmd["WAKEWORD_ADDED"] = "wakeword_added";
+})(WorkerOutCmd || (WorkerOutCmd = {}));
+var WorkerInCmd;
+(function (WorkerInCmd) {
+    WorkerInCmd["START"] = "start";
+    WorkerInCmd["STOP"] = "stop";
+    WorkerInCmd["WAKEWORD"] = "wakeword";
+    WorkerInCmd["PORT"] = "port";
+    WorkerInCmd["STOP_PORT"] = "stop_port";
+})(WorkerInCmd || (WorkerInCmd = {}));
 
 class RustpotterService {
-    constructor(config = {}, customSourceNode) {
-        this.customSourceNode = customSourceNode;
-        this.defaultCallback = ({ data }) => {
-            switch (data['type']) {
-                case 'detection':
-                    const { detection } = data;
-                    return this.onspot(detection);
+    static async new(config = {}) {
+        const instance = new RustpotterService(config);
+        await instance.registerWorker();
+        return instance;
+    }
+    constructor(config) {
+        this.spotListener = (detection) => { };
+        this.workerCallback = ({ data }) => {
+            switch (data[0]) {
+                case WorkerOutCmd.DETECTION:
+                    return this.spotListener(data[1]);
             }
         };
-        this.onpause = () => { };
-        this.onresume = () => { };
-        this.onstart = () => { };
-        this.onstop = () => { };
-        this.onspot = (detection) => { };
-        if (!RustpotterService.isRecordingSupported()) {
-            throw new Error("Recording is not supported in this browser");
-        }
-        this.state = "inactive";
         this.config = Object.assign({
-            workletPath: '/rustpotterWorker.js',
+            workletPath: '/rustpotterWorklet.js',
+            workerPath: '/rustpotterWorker.js',
             wasmPath: '/rustpotter_wasm_bg.wasm',
             monitorGain: 0,
             recordingGain: 1,
             // rustpotter options
+            sampleRate: 16000,
             minScores: 5,
             threshold: 0.5,
             averagedThreshold: 0.25,
@@ -67,210 +57,117 @@ class RustpotterService {
             bandPassHighCutoff: 400,
         }, config);
     }
-    static isRecordingSupported() {
-        const getUserMediaSupported = window.navigator && window.navigator.mediaDevices && window.navigator.mediaDevices.getUserMedia;
-        return AudioContext && getUserMediaSupported && window.WebAssembly;
-    }
-    clearStream() {
-        if (this.stream) {
-            if (this.stream.getTracks) {
-                this.stream.getTracks().forEach(track => track.stop());
-            }
-            else {
-                this.stream.stop();
-            }
-        }
+    onDetection(cb) {
+        this.spotListener = cb;
     }
     close() {
-        if (this.sourceNode) {
-            this.sourceNode.disconnect();
-        }
-        this.clearStream();
-        if (this.processor) {
-            this.processorNode.disconnect();
-            this.processor.postMessage({ command: "close" });
-        }
-        if (!this.customSourceNode && this.audioContext) {
-            return this.audioContext.close();
+        var _a;
+        if (this.workerPort) {
+            (_a = this.audioProcessorNode) === null || _a === void 0 ? void 0 : _a.disconnect();
+            this.workerPort([WorkerInCmd.STOP, undefined]);
         }
         return Promise.resolve();
     }
-    postBuffers(inputBuffer) {
-        if (this.state === "recording") {
-            const buffers = [];
-            for (let i = 0; i < inputBuffer.numberOfChannels; i++) {
-                buffers[i] = inputBuffer.getChannelData(i);
-            }
-            this.processor.postMessage({
-                command: "process",
-                buffers: buffers
-            });
-        }
-    }
-    ;
-    initAudioContext() {
-        var _a;
-        const _AudioContext = window.AudioContext || global.webkitAudioContext;
-        this.audioContext = ((_a = this.customSourceNode) === null || _a === void 0 ? void 0 : _a.context) ? this.customSourceNode.context : new _AudioContext();
-    }
-    ;
-    registerWorker(audioContext) {
-        return __awaiter(this, void 0, void 0, function* () {
-            if (audioContext.audioWorklet) {
-                yield audioContext.audioWorklet.addModule(this.config.workletPath);
-                this.processorNode = new AudioWorkletNode(audioContext, 'rustpotter-worklet', { numberOfOutputs: 0 });
-                this.processor = this.processorNode.port;
-            }
-            else {
-                console.log('audioWorklet support not detected. Falling back to scriptProcessor');
-                this.processorNode = audioContext.createScriptProcessor(4096, 1, 1);
-                this.processorNode.onaudioprocess = ({ inputBuffer }) => this.postBuffers(inputBuffer);
-                this.processorNode.connect(audioContext.destination);
-                this.processor = new window.Worker(this.config.workletPath);
-            }
-        });
-    }
-    initSourceNode() {
-        if (this.customSourceNode) {
-            this.sourceNode = this.customSourceNode;
-            return Promise.resolve();
-        }
-        return window.navigator.mediaDevices.getUserMedia({ audio: true, video: false }).then(stream => {
-            this.stream = stream;
-            this.sourceNode = this.audioContext.createMediaStreamSource(stream);
-        });
-    }
-    ;
-    setupListener() {
-        this.processor.removeEventListener("message", this.defaultCallback);
-        this.processor.addEventListener("message", this.defaultCallback);
-    }
-    initWorker(audioContext) {
-        return new Promise((resolve, reject) => {
+    async registerWorker() {
+        const worker = this.worker = new window.Worker(this.config.workerPath);
+        this.workerPort = (msg, t) => worker.postMessage(msg, t);
+        return new Promise(async (resolve, reject) => {
             const callback = ({ data }) => {
-                switch (data['type']) {
-                    case 'rustpotter-ready':
-                        this.processor.removeEventListener("message", callback);
-                        this.setupListener();
-                        return resolve();
-                    case 'rustpotter-error':
-                        this.processor.removeEventListener("message", callback);
-                        return reject(new Error("Unable to start rustpotter worklet"));
+                switch (data[0]) {
+                    case WorkerOutCmd.STARTED:
+                        if (data[1]) {
+                            worker.addEventListener("message", this.workerCallback);
+                            return resolve();
+                        }
+                        else {
+                            return reject(new Error("Unable to start rustpotter worker"));
+                        }
                 }
             };
             try {
-                this.processor.addEventListener("message", callback);
-                if (this.processor.start) {
-                    this.processor.start();
-                }
+                worker.addEventListener("message", callback, { once: true });
                 this.fetchResource(this.config.wasmPath)
-                    .then(wasmBytes => this.processor.postMessage(Object.assign({ command: 'init', wasmBytes, sampleRate: audioContext.sampleRate }, this.config)));
+                    .then(wasmBytes => this.workerPort([WorkerInCmd.START, {
+                        wasmBytes,
+                        config: this.config,
+                    }]));
             }
             catch (error) {
                 reject(error);
             }
         });
     }
-    getProcessorNode(audioContext) {
-        return __awaiter(this, void 0, void 0, function* () {
-            this.state = "external";
-            yield this.registerWorker(audioContext);
-            yield this.initWorker(audioContext);
-            return this.processorNode;
+    async registerWorklet(audioContext) {
+        await audioContext.audioWorklet.addModule(this.config.workletPath);
+        this.audioProcessorNode = new AudioWorkletNode(audioContext, 'rustpotter-worklet', { numberOfOutputs: 0 });
+        return this.audioProcessorNode.port;
+    }
+    initWorklet(audioContext) {
+        if (audioContext.sampleRate != this.config.sampleRate) {
+            throw new Error("Audio context sample rate is not correct");
+        }
+        return new Promise(async (resolve, reject) => {
+            try {
+                const workletPort = await this.registerWorklet(audioContext);
+                const callback = this.getWorkletMsgCallback(WorkerOutCmd.PORT_STARTED, resolve, () => reject(new Error("Unable to setup rustpotter worklet")));
+                this.worker.addEventListener("message", callback, { once: true });
+                this.workerPort([WorkerInCmd.PORT, workletPort], [workletPort]);
+            }
+            catch (error) {
+                reject(error);
+            }
         });
     }
-    pause() {
-        if (this.state === "recording") {
-            this.state = "paused";
-            this.sourceNode.disconnect();
-            this.onpause();
+    async getProcessorNode(audioContext) {
+        if (this.audioProcessorNode) {
+            throw new Error("Can not create multiple processor nodes");
         }
-        return Promise.resolve();
+        await this.initWorklet(audioContext);
+        return this.audioProcessorNode;
     }
-    resume() {
-        if (this.state === "paused") {
-            this.state = "recording";
-            this.sourceNode.connect(this.processorNode);
-            this.onresume();
+    async disposeProcessorNode() {
+        if (!this.audioProcessorNode) {
+            throw new Error("Processor node already disposed");
         }
-    }
-    start() {
-        if (this.state === "inactive") {
-            this.state = 'loading';
-            this.initAudioContext();
-            return this.audioContext.resume()
-                .then(() => this.registerWorker(this.audioContext))
-                .then(() => Promise.all([this.initSourceNode(), this.initWorker(this.audioContext)]))
-                .then(() => {
-                this.state = "recording";
-                this.sourceNode.connect(this.processorNode);
-                this.onstart();
-            })
-                .catch(error => {
-                this.state = 'inactive';
-                throw error;
-            });
-        }
-        return Promise.resolve();
-    }
-    stop() {
-        if (this.state === "paused" || this.state === "recording") {
-            this.state = "inactive";
-            // macOS and iOS requires the source to remain connected (in case stopped while paused)
-            this.sourceNode.connect(this.processorNode);
-            this.clearStream();
-            return new Promise(resolve => {
-                const callback = ({ data }) => {
-                    if (data["type"] === 'done') {
-                        this.processor.removeEventListener("message", callback);
-                        resolve();
-                    }
-                };
-                this.processor.addEventListener("message", callback);
-                if (this.processor.start) {
-                    this.processor.start();
-                }
-                this.processor.postMessage({ command: "done" });
-            }).then(() => this.finish());
-        }
-        return Promise.resolve();
-    }
-    getState() {
-        return this.state;
-    }
-    addWakewordByPath(path, headers) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return this.fetchResource(path, headers)
-                .then(buffer => this.addWakeword(buffer));
+        return new Promise((resolve, reject) => {
+            try {
+                this.audioProcessorNode.disconnect();
+            }
+            catch (error) {
+                return reject(error);
+            }
+            this.audioProcessorNode = null;
+            const callback = this.getWorkletMsgCallback(WorkerOutCmd.PORT_STOPPED, resolve, () => reject(new Error("Unable to load wakeword")));
+            this.worker.addEventListener("message", callback, { once: true });
+            this.workerPort([WorkerInCmd.STOP_PORT, undefined]);
         });
     }
-    addWakeword(wakewordBytes) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return new Promise((resolve, reject) => {
-                const callback = ({ data }) => {
-                    switch (data['type']) {
-                        case 'wakeword-loaded':
-                            this.processor.removeEventListener("message", callback);
-                            return resolve();
-                        case 'wakeword-error':
-                            this.processor.removeEventListener("message", callback);
-                            return reject(new Error("Unable to load wakeword"));
-                    }
-                };
-                this.processor.addEventListener("message", callback);
-                this.processor.postMessage({
-                    command: 'wakeword',
-                    wakewordBytes,
-                });
-            });
+    async addWakewordByPath(path, headers) {
+        return this.fetchResource(path, headers)
+            .then(buffer => this.addWakeword(buffer));
+    }
+    async addWakeword(wakewordBytes) {
+        return new Promise((resolve, reject) => {
+            const callback = this.getWorkletMsgCallback(WorkerOutCmd.WAKEWORD_ADDED, resolve, () => reject(new Error("Unable to load wakeword")));
+            this.worker.addEventListener("message", callback, { once: true });
+            this.workerPort([WorkerInCmd.WAKEWORD, wakewordBytes], [wakewordBytes]);
         });
     }
     fetchResource(path, headers) {
         return window.fetch(path, { headers })
             .then(response => response.arrayBuffer());
     }
-    finish() {
-        this.onstop();
+    getWorkletMsgCallback(cmd, resolve, reject) {
+        return ({ data }) => {
+            if (data[0] == cmd) {
+                if (data[1]) {
+                    return resolve();
+                }
+                else {
+                    return reject();
+                }
+            }
+        };
     }
 }
 

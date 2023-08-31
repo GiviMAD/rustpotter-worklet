@@ -62,7 +62,7 @@ export type RustpotterConfigInternal = {
     bandSize: number,
     minScores: number,
     scoreMode: ScoreMode,
-    vadMode: VADMode | null,
+    vadMode: VADMode | undefined,
     gainNormalizerEnabled: boolean,
     minGain: number,
     maxGain: number,

@@ -661,37 +661,6 @@ class RustpotterDetection {
     }
 }
 
-async function __wbg_load(module, imports) {
-    if (typeof Response === 'function' && module instanceof Response) {
-        if (typeof WebAssembly.instantiateStreaming === 'function') {
-            try {
-                return await WebAssembly.instantiateStreaming(module, imports);
-
-            } catch (e) {
-                if (module.headers.get('Content-Type') != 'application/wasm') {
-                    console.warn("`WebAssembly.instantiateStreaming` failed because your server does not serve wasm with `application/wasm` MIME type. Falling back to `WebAssembly.instantiate` which is slower. Original error:\n", e);
-
-                } else {
-                    throw e;
-                }
-            }
-        }
-
-        const bytes = await module.arrayBuffer();
-        return await WebAssembly.instantiate(bytes, imports);
-
-    } else {
-        const instance = await WebAssembly.instantiate(module, imports);
-
-        if (instance instanceof WebAssembly.Instance) {
-            return { instance, module };
-
-        } else {
-            return instance;
-        }
-    }
-}
-
 function __wbg_get_imports() {
     const imports = {};
     imports.wbg = {};
@@ -817,7 +786,6 @@ function __wbg_get_imports() {
 
 function __wbg_finalize_init(instance, module) {
     wasm = instance.exports;
-    __wbg_init.__wbindgen_wasm_module = module;
     cachedFloat32Memory0 = null;
     cachedInt32Memory0 = null;
     cachedUint16Memory0 = null;
@@ -828,21 +796,18 @@ function __wbg_finalize_init(instance, module) {
     return wasm;
 }
 
-async function __wbg_init(input) {
+function initSync(module) {
     if (wasm !== undefined) return wasm;
 
-    if (typeof input === 'undefined') {
-        input = new URL('rustpotter_wasm_bg.wasm', import.meta.url);
-    }
     const imports = __wbg_get_imports();
 
-    if (typeof input === 'string' || (typeof Request === 'function' && input instanceof Request) || (typeof URL === 'function' && input instanceof URL)) {
-        input = fetch(input);
+    if (!(module instanceof WebAssembly.Module)) {
+        module = new WebAssembly.Module(module);
     }
 
-    const { instance, module } = await __wbg_load(await input, imports);
+    const instance = new WebAssembly.Instance(module, imports);
 
-    return __wbg_finalize_init(instance, module);
+    return __wbg_finalize_init(instance);
 }
 
 var WorkletOutCommands;
@@ -863,33 +828,28 @@ class RustpotterWorkerImpl {
     constructor(wasmBytes, config, postMessage) {
         this.config = config;
         this.postMessage = postMessage;
-        this.wasmLoadedPromise = (async () => {
-            await __wbg_init(WebAssembly.compile(wasmBytes));
-            const builder = RustpotterBuilder.new();
-            builder.setSampleRate(this.config.sampleRate);
-            builder.setSampleFormat(SampleFormat.f32);
-            builder.setChannels(1);
-            builder.setAveragedThreshold(this.config.averagedThreshold);
-            builder.setThreshold(this.config.threshold);
-            builder.setScoreRef(this.config.scoreRef);
-            builder.setBandSize(this.config.bandSize);
-            builder.setMinScores(this.config.minScores);
-            builder.setScoreMode(this.config.scoreMode);
-            builder.setVADMode(this.config.vadMode);
-            builder.setGainNormalizerEnabled(this.config.gainNormalizerEnabled);
-            builder.setMinGain(this.config.minGain);
-            builder.setMaxGain(this.config.maxGain);
-            if (this.config.gainRef != null)
-                builder.setGainRef(this.config.gainRef);
-            builder.setBandPassEnabled(this.config.bandPassEnabled);
-            builder.setBandPassLowCutoff(this.config.bandPassLowCutoff);
-            builder.setBandPassHighCutoff(this.config.bandPassHighCutoff);
-            this.rustpotter = builder.build();
-            builder.free();
-        })();
-    }
-    waitReady() {
-        return this.wasmLoadedPromise;
+        initSync(wasmBytes);
+        const builder = RustpotterBuilder.new();
+        builder.setSampleRate(this.config.sampleRate);
+        builder.setSampleFormat(SampleFormat.f32);
+        builder.setChannels(1);
+        builder.setAveragedThreshold(this.config.averagedThreshold);
+        builder.setThreshold(this.config.threshold);
+        builder.setScoreRef(this.config.scoreRef);
+        builder.setBandSize(this.config.bandSize);
+        builder.setMinScores(this.config.minScores);
+        builder.setScoreMode(this.config.scoreMode);
+        builder.setVADMode(this.config.vadMode);
+        builder.setGainNormalizerEnabled(this.config.gainNormalizerEnabled);
+        builder.setMinGain(this.config.minGain);
+        builder.setMaxGain(this.config.maxGain);
+        if (this.config.gainRef != null)
+            builder.setGainRef(this.config.gainRef);
+        builder.setBandPassEnabled(this.config.bandPassEnabled);
+        builder.setBandPassLowCutoff(this.config.bandPassLowCutoff);
+        builder.setBandPassHighCutoff(this.config.bandPassHighCutoff);
+        this.rustpotter = builder.build();
+        builder.free();
     }
     getSamplesPerFrame() {
         return this.rustpotter.getSamplesPerFrame();
@@ -898,7 +858,8 @@ class RustpotterWorkerImpl {
         this.rustpotter.addWakeword(data);
     }
     process(audioSamples) {
-        this.handleDetection(this.rustpotter.processF32(audioSamples));
+        var _a;
+        this.handleDetection((_a = this.rustpotter) === null || _a === void 0 ? void 0 : _a.processF32(audioSamples));
     }
     handleCommand(msg) {
         var _a, _b, _c;
@@ -906,17 +867,18 @@ class RustpotterWorkerImpl {
             case WorkerInCmd.STOP_PORT:
                 (_a = this.workletPort) === null || _a === void 0 ? void 0 : _a.postMessage([WorkletInCmd.STOP, undefined]);
                 (_b = this.workletPort) === null || _b === void 0 ? void 0 : _b.close();
-                this.workletPort = null;
+                this.workletPort = undefined;
                 this.postMessage([WorkerOutCmd.PORT_STOPPED, true]);
                 break;
             case WorkerInCmd.PORT:
                 (_c = this.workletPort) === null || _c === void 0 ? void 0 : _c.close();
                 this.workletPort = msg[1];
                 const callback = ({ data }) => {
+                    var _a;
                     switch (data[0]) {
                         case WorkletOutCommands.STARTED:
                             if (data[1]) {
-                                this.workletPort.addEventListener("message", ({ data }) => {
+                                (_a = this.workletPort) === null || _a === void 0 ? void 0 : _a.addEventListener("message", ({ data }) => {
                                     switch (data[0]) {
                                         case WorkletOutCommands.AUDIO:
                                             this.process(data[1]);
@@ -949,7 +911,7 @@ class RustpotterWorkerImpl {
                 break;
             case WorkerInCmd.STOP:
                 this.close();
-                this.postMessage([WorkerOutCmd.STOPPED, undefined]);
+                this.postMessage([WorkerOutCmd.STOPPED, true]);
                 break;
             default:
                 console.warn("Unsupported command " + msg[0]);
@@ -992,17 +954,17 @@ onmessage = ({ data }) => {
                 console.warn("Already starting");
             }
             starting = true;
-            implementation = new RustpotterWorkerImpl(data[1].wasmBytes, data[1].config, (msg) => postMessage(msg));
-            implementation.waitReady()
-                .then(() => {
+            try {
+                implementation = new RustpotterWorkerImpl(data[1].wasmBytes, data[1].config, (msg) => postMessage(msg));
                 postMessage([WorkerOutCmd.STARTED, true]);
-            })
-                .catch((err) => {
+            }
+            catch (err) {
                 console.error(err);
                 postMessage([WorkerOutCmd.STARTED, false]);
-            }).finally(() => {
+            }
+            finally {
                 starting = false;
-            });
+            }
             break;
         default:
             if (!implementation) {

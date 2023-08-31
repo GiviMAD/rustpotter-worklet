@@ -1,37 +1,32 @@
 import { WorkerInMsg, WorkerInCmd as WorkerInCmd, WorkerOutCmd, RustpotterConfigInternal, WorkerOutMsg } from './worker-cmds';
-import init, { RustpotterDetection, Rustpotter, RustpotterBuilder, SampleFormat } from "rustpotter-web-slim";
+import { RustpotterDetection, Rustpotter, RustpotterBuilder, SampleFormat, initSync } from "rustpotter-web-slim";
 import { WorkletInCmd, WorkletInMsg, WorkletOutCommands, WorkletOutMsg } from './worklet-cmds';
 class RustpotterWorkerImpl {
     private wasmLoadedPromise: Promise<void>;
     private rustpotter: Rustpotter;
     private workletPort?: MessagePort;
     constructor(wasmBytes: ArrayBuffer, private config: RustpotterConfigInternal, private postMessage: (msg: WorkerOutMsg) => void) {
-        this.wasmLoadedPromise = (async () => {
-            await init(WebAssembly.compile(wasmBytes));
-            const builder = RustpotterBuilder.new();
-            builder.setSampleRate(this.config.sampleRate);
-            builder.setSampleFormat(SampleFormat.f32);
-            builder.setChannels(1);
-            builder.setAveragedThreshold(this.config.averagedThreshold);
-            builder.setThreshold(this.config.threshold);
-            builder.setScoreRef(this.config.scoreRef);
-            builder.setBandSize(this.config.bandSize);
-            builder.setMinScores(this.config.minScores);
-            builder.setScoreMode(this.config.scoreMode);
-            builder.setVADMode(this.config.vadMode);
-            builder.setGainNormalizerEnabled(this.config.gainNormalizerEnabled);
-            builder.setMinGain(this.config.minGain);
-            builder.setMaxGain(this.config.maxGain);
-            if (this.config.gainRef != null) builder.setGainRef(this.config.gainRef);
-            builder.setBandPassEnabled(this.config.bandPassEnabled);
-            builder.setBandPassLowCutoff(this.config.bandPassLowCutoff);
-            builder.setBandPassHighCutoff(this.config.bandPassHighCutoff);
-            this.rustpotter = builder.build();
-            builder.free();
-        })();
-    }
-    waitReady() {
-        return this.wasmLoadedPromise;
+        initSync(wasmBytes);
+        const builder = RustpotterBuilder.new();
+        builder.setSampleRate(this.config.sampleRate);
+        builder.setSampleFormat(SampleFormat.f32);
+        builder.setChannels(1);
+        builder.setAveragedThreshold(this.config.averagedThreshold);
+        builder.setThreshold(this.config.threshold);
+        builder.setScoreRef(this.config.scoreRef);
+        builder.setBandSize(this.config.bandSize);
+        builder.setMinScores(this.config.minScores);
+        builder.setScoreMode(this.config.scoreMode);
+        builder.setVADMode(this.config.vadMode);
+        builder.setGainNormalizerEnabled(this.config.gainNormalizerEnabled);
+        builder.setMinGain(this.config.minGain);
+        builder.setMaxGain(this.config.maxGain);
+        if (this.config.gainRef != null) builder.setGainRef(this.config.gainRef);
+        builder.setBandPassEnabled(this.config.bandPassEnabled);
+        builder.setBandPassLowCutoff(this.config.bandPassLowCutoff);
+        builder.setBandPassHighCutoff(this.config.bandPassHighCutoff);
+        this.rustpotter = builder.build();
+        builder.free();
     }
     getSamplesPerFrame() {
         return this.rustpotter.getSamplesPerFrame()
@@ -40,14 +35,14 @@ class RustpotterWorkerImpl {
         this.rustpotter.addWakeword(data);
     }
     process(audioSamples: Float32Array) {
-        this.handleDetection(this.rustpotter.processF32(audioSamples));
+        this.handleDetection(this.rustpotter?.processF32(audioSamples));
     }
     handleCommand(msg: WorkerInMsg) {
         switch (msg[0]) {
             case WorkerInCmd.STOP_PORT:
                 this.workletPort?.postMessage([WorkletInCmd.STOP, undefined] as WorkletInMsg)
                 this.workletPort?.close();
-                this.workletPort = null;
+                this.workletPort = undefined;
                 this.postMessage([WorkerOutCmd.PORT_STOPPED, true]);
                 break;
             case WorkerInCmd.PORT:
@@ -57,7 +52,7 @@ class RustpotterWorkerImpl {
                     switch (data[0]) {
                         case WorkletOutCommands.STARTED:
                             if (data[1]) {
-                                this.workletPort.addEventListener("message", ({ data }: { data: WorkletOutMsg } & Event) => {
+                                this.workletPort?.addEventListener("message", ({ data }: { data: WorkletOutMsg } & Event) => {
                                     switch (data[0]) {
                                         case WorkletOutCommands.AUDIO:
                                             this.process(data[1]);
@@ -88,13 +83,13 @@ class RustpotterWorkerImpl {
                 break;
             case WorkerInCmd.STOP:
                 this.close();
-                this.postMessage([WorkerOutCmd.STOPPED, undefined]);
+                this.postMessage([WorkerOutCmd.STOPPED, true]);
                 break;
             default:
                 console.warn("Unsupported command " + msg[0]);
         }
     }
-    private handleDetection(detection: RustpotterDetection) {
+    private handleDetection(detection?: RustpotterDetection) {
         if (detection) {
             const scoreNames = detection.getScoreNames().split("||");
             const scores = detection.getScores().reduce((acc, v, i) => {
@@ -115,13 +110,12 @@ class RustpotterWorkerImpl {
             detection.free();
         }
     }
-
     close() {
         this.rustpotter.free();
     }
 }
 
-let implementation: RustpotterWorkerImpl = null;
+let implementation: RustpotterWorkerImpl | null = null;
 let starting: boolean;
 onmessage = ({ data }: { data: WorkerInMsg }) => {
     switch (data[0]) {
@@ -133,21 +127,19 @@ onmessage = ({ data }: { data: WorkerInMsg }) => {
                 console.warn("Already starting");
             }
             starting = true;
-            implementation = new RustpotterWorkerImpl(
-                data[1].wasmBytes,
-                data[1].config,
-                (msg) => postMessage(msg),
-            );
-            implementation.waitReady()
-                .then(() => {
-                    postMessage([WorkerOutCmd.STARTED, true] as WorkerOutMsg);
-                })
-                .catch((err: any) => {
-                    console.error(err);
-                    postMessage([WorkerOutCmd.STARTED, false] as WorkerOutMsg);
-                }).finally(() => {
-                    starting = false;
-                });
+            try {
+                implementation = new RustpotterWorkerImpl(
+                    data[1].wasmBytes,
+                    data[1].config,
+                    (msg) => postMessage(msg),
+                );
+                postMessage([WorkerOutCmd.STARTED, true] as WorkerOutMsg);
+            } catch (err) {
+                console.error(err);
+                postMessage([WorkerOutCmd.STARTED, false] as WorkerOutMsg);
+            } finally {
+                starting = false;
+            }
             break;
         default:
             if (!implementation) {

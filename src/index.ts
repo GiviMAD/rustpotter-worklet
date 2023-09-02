@@ -91,11 +91,6 @@ export class RustpotterService {
 
 
   }
-  private async registerWorklet(audioContext: AudioContext): Promise<MessagePort> {
-    await audioContext.audioWorklet.addModule(this.config.workletPath);
-    this.audioProcessorNode = new AudioWorkletNode(audioContext, 'rustpotter-worklet', { numberOfOutputs: 0 });
-    return this.audioProcessorNode.port;
-  }
 
   private initWorklet(audioContext: AudioContext) {
     if (audioContext.sampleRate != this.config.sampleRate) {
@@ -103,8 +98,10 @@ export class RustpotterService {
     }
     return new Promise<void>(async (resolve, reject) => {
       try {
-        const workletPort = await this.registerWorklet(audioContext);
-        const callback = this.getWorkletMsgCallback(WorkerOutCmd.PORT_STARTED, resolve, () => reject(new Error("Unable to setup rustpotter worklet")));
+        await audioContext.audioWorklet.addModule(this.config.workletPath);
+        this.audioProcessorNode = new AudioWorkletNode(audioContext, 'rustpotter-worklet', { numberOfOutputs: 0 });
+        const workletPort = this.audioProcessorNode.port;
+        const callback = this.getWorkerMsgCallback(WorkerOutCmd.PORT_STARTED, resolve, () => reject(new Error("Unable to setup rustpotter worklet")));
         this.worker.addEventListener("message", callback, { once: true });
         this.workerPort([WorkerInCmd.PORT, workletPort], [workletPort]);
       } catch (error) {
@@ -117,7 +114,7 @@ export class RustpotterService {
       throw new Error("Can not create multiple processor nodes");
     }
     await this.initWorklet(audioContext);
-    return this.audioProcessorNode;
+    return this.audioProcessorNode as AudioWorkletNode;
   }
   async disposeProcessorNode() {
     if (!this.audioProcessorNode) {
@@ -126,11 +123,10 @@ export class RustpotterService {
     return new Promise((resolve, reject) => {
       try {
         this.audioProcessorNode.disconnect();
-      } catch (error) {
-        return reject(error);
+      } catch {
       }
       this.audioProcessorNode = null;
-      const callback = this.getWorkletMsgCallback(WorkerOutCmd.PORT_STOPPED, resolve, () => reject(new Error("Unable to load wakeword")));
+      const callback = this.getWorkerMsgCallback(WorkerOutCmd.PORT_STOPPED, resolve, () => reject(new Error("Unable to stop worklet")));
       this.worker.addEventListener("message", callback, { once: true });
       this.workerPort([WorkerInCmd.STOP_PORT, undefined]);
     });
@@ -141,16 +137,22 @@ export class RustpotterService {
   }
   async addWakeword(wakewordBytes: ArrayBuffer) {
     return new Promise<void>((resolve, reject) => {
-      const callback = this.getWorkletMsgCallback(WorkerOutCmd.WAKEWORD_ADDED, resolve, () => reject(new Error("Unable to load wakeword")));
+      const callback = this.getWorkerMsgCallback(WorkerOutCmd.WAKEWORD_ADDED, resolve, () => reject(new Error("Unable to load wakeword")));
       this.worker.addEventListener("message", callback, { once: true });
       this.workerPort([WorkerInCmd.WAKEWORD, wakewordBytes] as WorkerInMsg, [wakewordBytes]);
     });
   }
   private fetchResource(path: string, headers?: HeadersInit) {
     return window.fetch(path, { headers })
-      .then(response => response.arrayBuffer())
+      .then(response => {
+        if (response.ok) {
+          return response.arrayBuffer();
+        } else {
+          throw new Error(`Failed with http status ${response.status}: ${response.statusText}`)
+        }
+      })
   }
-  private getWorkletMsgCallback(cmd: WorkerOutCmd, resolve: (value: void | PromiseLike<void>) => void, reject: () => void) {
+  private getWorkerMsgCallback(cmd: WorkerOutCmd, resolve: (value: void | PromiseLike<void>) => void, reject: () => void) {
     return ({ data }: { data: WorkerOutMsg; } & Event) => {
       if (data[0] == cmd) {
         if (data[1]) {

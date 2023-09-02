@@ -2,7 +2,6 @@ import { WorkerInMsg, WorkerInCmd as WorkerInCmd, WorkerOutCmd, RustpotterConfig
 import { RustpotterDetection, Rustpotter, RustpotterBuilder, SampleFormat, initSync } from "rustpotter-web-slim";
 import { WorkletInCmd, WorkletInMsg, WorkletOutCommands, WorkletOutMsg } from './worklet-cmds';
 class RustpotterWorkerImpl {
-    private wasmLoadedPromise: Promise<void>;
     private rustpotter: Rustpotter;
     private workletPort?: MessagePort;
     constructor(wasmBytes: ArrayBuffer, private config: RustpotterConfigInternal, private postMessage: (msg: WorkerOutMsg) => void) {
@@ -40,9 +39,11 @@ class RustpotterWorkerImpl {
     handleCommand(msg: WorkerInMsg) {
         switch (msg[0]) {
             case WorkerInCmd.STOP_PORT:
+                this.workletPort?.removeEventListener("message", this.workletAudioCallback);
                 this.workletPort?.postMessage([WorkletInCmd.STOP, undefined] as WorkletInMsg)
                 this.workletPort?.close();
                 this.workletPort = undefined;
+                this.rustpotter.reset();
                 this.postMessage([WorkerOutCmd.PORT_STOPPED, true]);
                 break;
             case WorkerInCmd.PORT:
@@ -52,18 +53,12 @@ class RustpotterWorkerImpl {
                     switch (data[0]) {
                         case WorkletOutCommands.STARTED:
                             if (data[1]) {
-                                this.workletPort?.addEventListener("message", ({ data }: { data: WorkletOutMsg } & Event) => {
-                                    switch (data[0]) {
-                                        case WorkletOutCommands.AUDIO:
-                                            this.process(data[1]);
-                                            break;
-                                    }
-                                });
+                                this.workletPort?.addEventListener("message", this.workletAudioCallback);
                                 this.postMessage([WorkerOutCmd.PORT_STARTED, true]);
                             } else {
                                 this.postMessage([WorkerOutCmd.PORT_STARTED, false]);
                             }
-                        case WorkletOutCommands.STOPPED:
+                            break;
                     }
                 };
                 this.workletPort.addEventListener("message", callback, { once: true });
@@ -84,9 +79,20 @@ class RustpotterWorkerImpl {
             case WorkerInCmd.STOP:
                 this.close();
                 this.postMessage([WorkerOutCmd.STOPPED, true]);
+                close();
                 break;
             default:
                 console.warn("Unsupported command " + msg[0]);
+        }
+    }
+    close() {
+        this.rustpotter.free();
+    }
+    private workletAudioCallback = ({ data }: { data: WorkletOutMsg } & Event) => {
+        switch (data[0]) {
+            case WorkletOutCommands.AUDIO:
+                this.process(data[1]);
+                break;
         }
     }
     private handleDetection(detection?: RustpotterDetection) {
@@ -110,9 +116,6 @@ class RustpotterWorkerImpl {
             detection.free();
         }
     }
-    close() {
-        this.rustpotter.free();
-    }
 }
 
 let implementation: RustpotterWorkerImpl | null = null;
@@ -120,14 +123,14 @@ let starting: boolean;
 onmessage = ({ data }: { data: WorkerInMsg }) => {
     switch (data[0]) {
         case WorkerInCmd.START:
-            if (implementation != null) {
-                console.warn("Already started");
-            }
-            if (starting != null) {
-                console.warn("Already starting");
-            }
-            starting = true;
             try {
+                if (implementation != null) {
+                    throw new Error("Already started");
+                }
+                if (starting != null) {
+                    throw new Error("Starting");
+                }
+                starting = true;
                 implementation = new RustpotterWorkerImpl(
                     data[1].wasmBytes,
                     data[1].config,
@@ -147,10 +150,6 @@ onmessage = ({ data }: { data: WorkerInMsg }) => {
                 return;
             }
             implementation.handleCommand(data);
-            if (data[0] === WorkerInCmd.STOP) {
-                implementation = null;
-                close();
-            }
             break;
     }
 };

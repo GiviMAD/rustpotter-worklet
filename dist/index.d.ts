@@ -14,12 +14,11 @@ export declare class RustpotterService {
     onDetection(cb: (detection: Detection) => void): void;
     close(): Promise<void>;
     private registerWorker;
-    private registerWorklet;
     private initWorklet;
     getProcessorNode(audioContext: AudioContext): Promise<AudioWorkletNode>;
     disposeProcessorNode(): Promise<unknown>;
     addWakewordByPath(path: string, headers?: HeadersInit): Promise<void>;
     addWakeword(wakewordBytes: ArrayBuffer): Promise<void>;
     private fetchResource;
-    private getWorkletMsgCallback;
+    private getWorkerMsgCallback;
 }

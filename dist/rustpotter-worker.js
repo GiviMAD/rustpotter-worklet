@@ -312,6 +312,12 @@ class Rustpotter {
         const ret = wasm.rustpotter_getBytesPerFrame(this.__wbg_ptr);
         return ret >>> 0;
     }
+    /**
+    * Reset internal state.
+    */
+    reset() {
+        wasm.rustpotter_reset(this.__wbg_ptr);
+    }
 }
 /**
 */
@@ -465,7 +471,7 @@ class RustpotterBuilder {
     /**
     * Configures the detector expected sample rate for the audio chunks to process.
     *
-    * Defaults to 48000
+    * Defaults to 16000
     * @param {number} value
     */
     setSampleRate(value) {
@@ -474,7 +480,7 @@ class RustpotterBuilder {
     /**
     * Configures the detector expected sample format for the audio chunks to process.
     *
-    * Defaults to int
+    * Defaults to F32
     * @param {number} value
     */
     setSampleFormat(value) {
@@ -828,6 +834,13 @@ class RustpotterWorkerImpl {
     constructor(wasmBytes, config, postMessage) {
         this.config = config;
         this.postMessage = postMessage;
+        this.workletAudioCallback = ({ data }) => {
+            switch (data[0]) {
+                case WorkletOutCommands.AUDIO:
+                    this.process(data[1]);
+                    break;
+            }
+        };
         initSync(wasmBytes);
         const builder = RustpotterBuilder.new();
         builder.setSampleRate(this.config.sampleRate);
@@ -862,35 +875,31 @@ class RustpotterWorkerImpl {
         this.handleDetection((_a = this.rustpotter) === null || _a === void 0 ? void 0 : _a.processF32(audioSamples));
     }
     handleCommand(msg) {
-        var _a, _b, _c;
+        var _a, _b, _c, _d;
         switch (msg[0]) {
             case WorkerInCmd.STOP_PORT:
-                (_a = this.workletPort) === null || _a === void 0 ? void 0 : _a.postMessage([WorkletInCmd.STOP, undefined]);
-                (_b = this.workletPort) === null || _b === void 0 ? void 0 : _b.close();
+                (_a = this.workletPort) === null || _a === void 0 ? void 0 : _a.removeEventListener("message", this.workletAudioCallback);
+                (_b = this.workletPort) === null || _b === void 0 ? void 0 : _b.postMessage([WorkletInCmd.STOP, undefined]);
+                (_c = this.workletPort) === null || _c === void 0 ? void 0 : _c.close();
                 this.workletPort = undefined;
+                this.rustpotter.reset();
                 this.postMessage([WorkerOutCmd.PORT_STOPPED, true]);
                 break;
             case WorkerInCmd.PORT:
-                (_c = this.workletPort) === null || _c === void 0 ? void 0 : _c.close();
+                (_d = this.workletPort) === null || _d === void 0 ? void 0 : _d.close();
                 this.workletPort = msg[1];
                 const callback = ({ data }) => {
                     var _a;
                     switch (data[0]) {
                         case WorkletOutCommands.STARTED:
                             if (data[1]) {
-                                (_a = this.workletPort) === null || _a === void 0 ? void 0 : _a.addEventListener("message", ({ data }) => {
-                                    switch (data[0]) {
-                                        case WorkletOutCommands.AUDIO:
-                                            this.process(data[1]);
-                                            break;
-                                    }
-                                });
+                                (_a = this.workletPort) === null || _a === void 0 ? void 0 : _a.addEventListener("message", this.workletAudioCallback);
                                 this.postMessage([WorkerOutCmd.PORT_STARTED, true]);
                             }
                             else {
                                 this.postMessage([WorkerOutCmd.PORT_STARTED, false]);
                             }
-                        case WorkletOutCommands.STOPPED:
+                            break;
                     }
                 };
                 this.workletPort.addEventListener("message", callback, { once: true });
@@ -912,10 +921,14 @@ class RustpotterWorkerImpl {
             case WorkerInCmd.STOP:
                 this.close();
                 this.postMessage([WorkerOutCmd.STOPPED, true]);
+                close();
                 break;
             default:
                 console.warn("Unsupported command " + msg[0]);
         }
+    }
+    close() {
+        this.rustpotter.free();
     }
     handleDetection(detection) {
         if (detection) {
@@ -938,23 +951,20 @@ class RustpotterWorkerImpl {
             detection.free();
         }
     }
-    close() {
-        this.rustpotter.free();
-    }
 }
 let implementation = null;
 let starting;
 onmessage = ({ data }) => {
     switch (data[0]) {
         case WorkerInCmd.START:
-            if (implementation != null) {
-                console.warn("Already started");
-            }
-            if (starting != null) {
-                console.warn("Already starting");
-            }
-            starting = true;
             try {
+                if (implementation != null) {
+                    throw new Error("Already started");
+                }
+                if (starting != null) {
+                    throw new Error("Starting");
+                }
+                starting = true;
                 implementation = new RustpotterWorkerImpl(data[1].wasmBytes, data[1].config, (msg) => postMessage(msg));
                 postMessage([WorkerOutCmd.STARTED, true]);
             }
@@ -972,10 +982,6 @@ onmessage = ({ data }) => {
                 return;
             }
             implementation.handleCommand(data);
-            if (data[0] === WorkerInCmd.STOP) {
-                implementation = null;
-                close();
-            }
             break;
     }
 };

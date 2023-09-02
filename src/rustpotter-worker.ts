@@ -30,9 +30,6 @@ class RustpotterWorkerImpl {
     getSamplesPerFrame() {
         return this.rustpotter.getSamplesPerFrame()
     }
-    addWakeword(data: Uint8Array) {
-        this.rustpotter.addWakeword(data);
-    }
     process(audioSamples: Float32Array) {
         this.handleDetection(this.rustpotter?.processF32(audioSamples));
     }
@@ -46,7 +43,7 @@ class RustpotterWorkerImpl {
                 this.rustpotter.reset();
                 this.postMessage([WorkerOutCmd.PORT_STOPPED, true]);
                 break;
-            case WorkerInCmd.PORT:
+            case WorkerInCmd.START_PORT:
                 this.workletPort?.close();
                 this.workletPort = msg[1];
                 const callback = ({ data }: { data: WorkletOutCommands } & Event) => {
@@ -67,14 +64,14 @@ class RustpotterWorkerImpl {
                 }
                 this.workletPort.postMessage([WorkletInCmd.START, this.getSamplesPerFrame()] as WorkletInMsg);
                 break;
-            case WorkerInCmd.WAKEWORD:
-                try {
-                    this.addWakeword(new Uint8Array(msg[1]));
-                    this.postMessage([WorkerOutCmd.WAKEWORD_ADDED, true]);
-                } catch (error) {
-                    console.error(error);
-                    this.postMessage([WorkerOutCmd.WAKEWORD_ADDED, false]);
-                }
+            case WorkerInCmd.ADD_WAKEWORD:
+                this.postMessage([WorkerOutCmd.WAKEWORD_ADDED, this.addWakeword(...msg[1])]);
+                break;
+            case WorkerInCmd.REMOVE_WAKEWORD:
+                this.postMessage([WorkerOutCmd.WAKEWORD_REMOVED, this.removeWakeword(msg[1])]);
+                break;
+            case WorkerInCmd.REMOVE_WAKEWORDS:
+                this.postMessage([WorkerOutCmd.WAKEWORDS_REMOVED, this.removeWakewords()]);
                 break;
             case WorkerInCmd.STOP:
                 this.close();
@@ -85,9 +82,39 @@ class RustpotterWorkerImpl {
                 console.warn("Unsupported command " + msg[0]);
         }
     }
+
     close() {
         this.rustpotter.free();
     }
+
+    private addWakeword(key: string, data: ArrayBuffer) {
+        try {
+            this.rustpotter.addWakeword(key, new Uint8Array(data));
+            return true;
+        } catch (error) {
+            console.error(error);
+            return false;
+        }
+    }
+
+    private removeWakeword(key: string) {
+        try {
+            return this.rustpotter.removeWakeword(key);
+        } catch (error) {
+            console.error(error);
+            return false;
+        }
+    }
+
+    private removeWakewords() {
+        try {
+            return this.rustpotter.removeWakewords();
+        } catch (error) {
+            console.error(error);
+            return false;
+        }
+    }
+
     private workletAudioCallback = ({ data }: { data: WorkletOutMsg } & Event) => {
         switch (data[0]) {
             case WorkletOutCommands.AUDIO:

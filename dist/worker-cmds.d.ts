@@ -5,9 +5,11 @@ export declare enum WorkerOutCmd {
     DETECTION = "detection",
     PORT_STARTED = "port_started",
     PORT_STOPPED = "port_stopped",
-    WAKEWORD_ADDED = "wakeword_added"
+    WAKEWORD_ADDED = "wakeword_added",
+    WAKEWORD_REMOVED = "wakeword_removed",
+    WAKEWORDS_REMOVED = "wakewords_removed"
 }
-export type WorkerOutData<T = WorkerOutCmd> = T extends WorkerOutCmd.STARTED ? boolean : T extends WorkerOutCmd.STOPPED ? boolean : T extends WorkerOutCmd.DETECTION ? Detection : T extends WorkerOutCmd.WAKEWORD_ADDED ? boolean : T extends WorkerOutCmd.PORT_STARTED ? boolean : T extends WorkerOutCmd.PORT_STOPPED ? boolean : undefined;
+export type WorkerOutData<T = WorkerOutCmd> = T extends WorkerOutCmd.STARTED ? boolean : T extends WorkerOutCmd.STOPPED ? boolean : T extends WorkerOutCmd.DETECTION ? Detection : T extends WorkerOutCmd.WAKEWORD_ADDED ? boolean : T extends WorkerOutCmd.WAKEWORD_REMOVED ? boolean : T extends WorkerOutCmd.WAKEWORDS_REMOVED ? boolean : T extends WorkerOutCmd.PORT_STARTED ? boolean : T extends WorkerOutCmd.PORT_STOPPED ? boolean : undefined;
 export type Started = {
     ok: true;
     samplesPerFrame: number;
@@ -35,11 +37,13 @@ export type WakewordAdded = {
 export declare enum WorkerInCmd {
     START = "start",
     STOP = "stop",
-    WAKEWORD = "wakeword",
-    PORT = "port",
+    ADD_WAKEWORD = "add_wakeword",
+    REMOVE_WAKEWORD = "remove_wakeword",
+    REMOVE_WAKEWORDS = "remove_wakewords",
+    START_PORT = "start_port",
     STOP_PORT = "stop_port"
 }
-export type WorkerInData<T = WorkerInCmd> = T extends WorkerInCmd.WAKEWORD ? ArrayBuffer : T extends WorkerInCmd.START ? Start : T extends WorkerInCmd.PORT ? MessagePort : undefined;
+export type WorkerInData<T = WorkerInCmd> = T extends WorkerInCmd.ADD_WAKEWORD ? [string, ArrayBuffer] : T extends WorkerInCmd.REMOVE_WAKEWORD ? string : T extends WorkerInCmd.START ? Start : T extends WorkerInCmd.START_PORT ? MessagePort : undefined;
 export type RustpotterConfigInternal = {
     workletPath: string;
     workerPath: string;

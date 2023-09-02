@@ -1,6 +1,6 @@
 {
   "name": "rustpotter-worklet",
-  "version": "3.0.0-beta.7",
+  "version": "3.0.0-rc.0",
   "description": "An open source wakeword spotter forged in rust",
   "main": "dist/index.js",
   "license": "Apache-2.0",
@@ -20,7 +20,7 @@
   ],
   "keywords": [],
   "dependencies": {
-    "rustpotter-web-slim": "3.0.0-beta.7"
+    "rustpotter-web-slim": "3.0.0-rc.0"
   },
   "devDependencies": {
     "@rollup/plugin-node-resolve": "^15.2.1",

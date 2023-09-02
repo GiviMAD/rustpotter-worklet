@@ -6,13 +6,17 @@ var WorkerOutCmd;
     WorkerOutCmd["PORT_STARTED"] = "port_started";
     WorkerOutCmd["PORT_STOPPED"] = "port_stopped";
     WorkerOutCmd["WAKEWORD_ADDED"] = "wakeword_added";
+    WorkerOutCmd["WAKEWORD_REMOVED"] = "wakeword_removed";
+    WorkerOutCmd["WAKEWORDS_REMOVED"] = "wakewords_removed";
 })(WorkerOutCmd || (WorkerOutCmd = {}));
 var WorkerInCmd;
 (function (WorkerInCmd) {
     WorkerInCmd["START"] = "start";
     WorkerInCmd["STOP"] = "stop";
-    WorkerInCmd["WAKEWORD"] = "wakeword";
-    WorkerInCmd["PORT"] = "port";
+    WorkerInCmd["ADD_WAKEWORD"] = "add_wakeword";
+    WorkerInCmd["REMOVE_WAKEWORD"] = "remove_wakeword";
+    WorkerInCmd["REMOVE_WAKEWORDS"] = "remove_wakewords";
+    WorkerInCmd["START_PORT"] = "start_port";
     WorkerInCmd["STOP_PORT"] = "stop_port";
 })(WorkerInCmd || (WorkerInCmd = {}));
 
@@ -64,24 +68,6 @@ function takeObject(idx) {
     return ret;
 }
 
-let WASM_VECTOR_LEN = 0;
-
-function passArray8ToWasm0(arg, malloc) {
-    const ptr = malloc(arg.length * 1, 1) >>> 0;
-    getUint8Memory0().set(arg, ptr / 1);
-    WASM_VECTOR_LEN = arg.length;
-    return ptr;
-}
-
-let cachedInt32Memory0 = null;
-
-function getInt32Memory0() {
-    if (cachedInt32Memory0 === null || cachedInt32Memory0.byteLength === 0) {
-        cachedInt32Memory0 = new Int32Array(wasm.memory.buffer);
-    }
-    return cachedInt32Memory0;
-}
-
 let cachedUint32Memory0 = null;
 
 function getUint32Memory0() {
@@ -90,6 +76,8 @@ function getUint32Memory0() {
     }
     return cachedUint32Memory0;
 }
+
+let WASM_VECTOR_LEN = 0;
 
 function passArray32ToWasm0(arg, malloc) {
     const ptr = malloc(arg.length * 4, 4) >>> 0;
@@ -126,6 +114,13 @@ function getFloat32Memory0() {
 function passArrayF32ToWasm0(arg, malloc) {
     const ptr = malloc(arg.length * 4, 4) >>> 0;
     getFloat32Memory0().set(arg, ptr / 4);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
+}
+
+function passArray8ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 1, 1) >>> 0;
+    getUint8Memory0().set(arg, ptr / 1);
     WASM_VECTOR_LEN = arg.length;
     return ptr;
 }
@@ -183,6 +178,15 @@ function passStringToWasm0(arg, malloc, realloc) {
     return ptr;
 }
 
+let cachedInt32Memory0 = null;
+
+function getInt32Memory0() {
+    if (cachedInt32Memory0 === null || cachedInt32Memory0.byteLength === 0) {
+        cachedInt32Memory0 = new Int32Array(wasm.memory.buffer);
+    }
+    return cachedInt32Memory0;
+}
+
 function getArrayF32FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return getFloat32Memory0().subarray(ptr / 4, ptr / 4 + len);
@@ -224,25 +228,6 @@ class Rustpotter {
     free() {
         const ptr = this.__destroy_into_raw();
         wasm.__wbg_rustpotter_free(ptr);
-    }
-    /**
-    * Loads a wakeword from its model bytes.
-    * @param {Uint8Array} bytes
-    */
-    addWakeword(bytes) {
-        try {
-            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-            const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
-            const len0 = WASM_VECTOR_LEN;
-            wasm.rustpotter_addWakeword(retptr, this.__wbg_ptr, ptr0, len0);
-            var r0 = getInt32Memory0()[retptr / 4 + 0];
-            var r1 = getInt32Memory0()[retptr / 4 + 1];
-            if (r1) {
-                throw takeObject(r0);
-            }
-        } finally {
-            wasm.__wbindgen_add_to_stack_pointer(16);
-        }
     }
     /**
     * Process int 32 bit audio chunks.
@@ -295,6 +280,47 @@ class Rustpotter {
         const len0 = WASM_VECTOR_LEN;
         const ret = wasm.rustpotter_processBytes(this.__wbg_ptr, ptr0, len0);
         return ret === 0 ? undefined : RustpotterDetection.__wrap(ret);
+    }
+    /**
+    * Loads a wakeword from its model bytes.
+    * @param {string} key
+    * @param {Uint8Array} bytes
+    */
+    addWakeword(key, bytes) {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            const ptr0 = passStringToWasm0(key, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len0 = WASM_VECTOR_LEN;
+            const ptr1 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+            const len1 = WASM_VECTOR_LEN;
+            wasm.rustpotter_addWakeword(retptr, this.__wbg_ptr, ptr0, len0, ptr1, len1);
+            var r0 = getInt32Memory0()[retptr / 4 + 0];
+            var r1 = getInt32Memory0()[retptr / 4 + 1];
+            if (r1) {
+                throw takeObject(r0);
+            }
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
+    * Removes a wakeword by key.
+    * @param {string} key
+    * @returns {boolean}
+    */
+    removeWakeword(key) {
+        const ptr0 = passStringToWasm0(key, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.rustpotter_removeWakeword(this.__wbg_ptr, ptr0, len0);
+        return ret !== 0;
+    }
+    /**
+    * Removes all wakewords.
+    * @returns {boolean}
+    */
+    removeWakewords() {
+        const ret = wasm.rustpotter_removeWakewords(this.__wbg_ptr);
+        return ret !== 0;
     }
     /**
     * Returns the required number of samples.
@@ -867,9 +893,6 @@ class RustpotterWorkerImpl {
     getSamplesPerFrame() {
         return this.rustpotter.getSamplesPerFrame();
     }
-    addWakeword(data) {
-        this.rustpotter.addWakeword(data);
-    }
     process(audioSamples) {
         var _a;
         this.handleDetection((_a = this.rustpotter) === null || _a === void 0 ? void 0 : _a.processF32(audioSamples));
@@ -885,7 +908,7 @@ class RustpotterWorkerImpl {
                 this.rustpotter.reset();
                 this.postMessage([WorkerOutCmd.PORT_STOPPED, true]);
                 break;
-            case WorkerInCmd.PORT:
+            case WorkerInCmd.START_PORT:
                 (_d = this.workletPort) === null || _d === void 0 ? void 0 : _d.close();
                 this.workletPort = msg[1];
                 const callback = ({ data }) => {
@@ -908,15 +931,14 @@ class RustpotterWorkerImpl {
                 }
                 this.workletPort.postMessage([WorkletInCmd.START, this.getSamplesPerFrame()]);
                 break;
-            case WorkerInCmd.WAKEWORD:
-                try {
-                    this.addWakeword(new Uint8Array(msg[1]));
-                    this.postMessage([WorkerOutCmd.WAKEWORD_ADDED, true]);
-                }
-                catch (error) {
-                    console.error(error);
-                    this.postMessage([WorkerOutCmd.WAKEWORD_ADDED, false]);
-                }
+            case WorkerInCmd.ADD_WAKEWORD:
+                this.postMessage([WorkerOutCmd.WAKEWORD_ADDED, this.addWakeword(...msg[1])]);
+                break;
+            case WorkerInCmd.REMOVE_WAKEWORD:
+                this.postMessage([WorkerOutCmd.WAKEWORD_REMOVED, this.removeWakeword(msg[1])]);
+                break;
+            case WorkerInCmd.REMOVE_WAKEWORDS:
+                this.postMessage([WorkerOutCmd.WAKEWORDS_REMOVED, this.removeWakewords()]);
                 break;
             case WorkerInCmd.STOP:
                 this.close();
@@ -929,6 +951,34 @@ class RustpotterWorkerImpl {
     }
     close() {
         this.rustpotter.free();
+    }
+    addWakeword(key, data) {
+        try {
+            this.rustpotter.addWakeword(key, new Uint8Array(data));
+            return true;
+        }
+        catch (error) {
+            console.error(error);
+            return false;
+        }
+    }
+    removeWakeword(key) {
+        try {
+            return this.rustpotter.removeWakeword(key);
+        }
+        catch (error) {
+            console.error(error);
+            return false;
+        }
+    }
+    removeWakewords() {
+        try {
+            return this.rustpotter.removeWakewords();
+        }
+        catch (error) {
+            console.error(error);
+            return false;
+        }
     }
     handleDetection(detection) {
         if (detection) {

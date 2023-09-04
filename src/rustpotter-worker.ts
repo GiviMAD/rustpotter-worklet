@@ -66,6 +66,7 @@ class RustpotterWorkerImpl {
         }
     }
     close() {
+        this.stopWorkletPort();
         this.rustpotter.free();
     }
     private addWakeword(key: string, data: ArrayBuffer) {

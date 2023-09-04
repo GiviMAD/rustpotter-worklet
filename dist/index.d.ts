@@ -20,7 +20,7 @@ export declare class RustpotterService {
     addWakeword(key: string, wakewordBytes: ArrayBuffer): Promise<boolean>;
     removeWakeword(key: string): Promise<boolean>;
     removeWakewords(): Promise<boolean>;
-    updateConfig(config: RustpotterConfig): Promise<void>;
+    updateConfig(config: Partial<RustpotterConfig>): Promise<void>;
     private initWorker;
     private initWorklet;
     private fetchResource;

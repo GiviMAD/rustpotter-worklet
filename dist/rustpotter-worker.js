@@ -949,6 +949,7 @@ class RustpotterWorkerImpl {
         }
     }
     close() {
+        this.stopWorkletPort();
         this.rustpotter.free();
     }
     addWakeword(key, data) {

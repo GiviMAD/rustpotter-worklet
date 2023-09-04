@@ -41,23 +41,7 @@ class RustpotterService {
                     return this.spotListener(data[1]);
             }
         };
-        this.config = Object.assign({
-            // rustpotter options
-            minScores: 5,
-            threshold: 0.5,
-            averagedThreshold: 0.25,
-            scoreRef: 0.22,
-            bandSize: 6,
-            vadMode: null,
-            scoreMode: ScoreMode.max,
-            gainNormalizerEnabled: false,
-            minGain: 0.1,
-            maxGain: 1,
-            gainRef: undefined,
-            bandPassEnabled: false,
-            bandPassLowCutoff: 85,
-            bandPassHighCutoff: 400,
-        }, config);
+        this.config = Object.assign(defaultConfig, config);
     }
     onDetection(cb) {
         this.spotListener = cb;
@@ -110,14 +94,15 @@ class RustpotterService {
     }
     async removeWakewords() {
         return new Promise((resolve) => {
-            this.resolveOnWorkerMsg(WorkerOutCmd.WAKEWORD_REMOVED, resolve, () => resolve(false));
+            this.resolveOnWorkerMsg(WorkerOutCmd.WAKEWORDS_REMOVED, resolve, () => resolve(false));
             this.workerPort([WorkerInCmd.REMOVE_WAKEWORDS, undefined]);
         });
     }
     async updateConfig(config) {
+        this.config = Object.assign(this.config, config);
         await new Promise((resolve, reject) => {
             this.resolveOnWorkerMsg(WorkerOutCmd.CONFIG_UPDATED, resolve, () => reject(new Error("Unable to update config")));
-            this.workerPort([WorkerInCmd.UPDATE_CONFIG, config]);
+            this.workerPort([WorkerInCmd.UPDATE_CONFIG, this.config]);
         });
     }
     async initWorker() {
@@ -191,5 +176,21 @@ class RustpotterService {
         }, { once: true });
     }
 }
+const defaultConfig = {
+    minScores: 5,
+    threshold: 0.5,
+    averagedThreshold: 0.25,
+    scoreRef: 0.22,
+    bandSize: 6,
+    vadMode: null,
+    scoreMode: ScoreMode.max,
+    gainNormalizerEnabled: false,
+    minGain: 0.1,
+    maxGain: 1,
+    gainRef: undefined,
+    bandPassEnabled: false,
+    bandPassLowCutoff: 85,
+    bandPassHighCutoff: 400,
+};
 
 export { RustpotterService };

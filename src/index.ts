@@ -15,29 +15,13 @@ export class RustpotterService {
         return this.spotListener(data[1]);
     }
   };
-  public static async new(sampleRate: number, resources: RustpotterResources, config: Partial<RustpotterConfig> = {} as any): Promise<RustpotterService> {
+  public static async new(sampleRate: number, resources: RustpotterResources, config: Partial<RustpotterConfig> = {}): Promise<RustpotterService> {
     const instance = new RustpotterService(sampleRate, resources, config);
     await instance.initWorker();
     return instance;
   }
   private constructor(private sampleRate: number, private resources: RustpotterResources, config: Partial<RustpotterConfig>) {
-    this.config = Object.assign({
-      // rustpotter options
-      minScores: 5,
-      threshold: 0.5,
-      averagedThreshold: 0.25,
-      scoreRef: 0.22,
-      bandSize: 6,
-      vadMode: null,
-      scoreMode: ScoreMode.max,
-      gainNormalizerEnabled: false,
-      minGain: 0.1,
-      maxGain: 1,
-      gainRef: undefined,
-      bandPassEnabled: false,
-      bandPassLowCutoff: 85,
-      bandPassHighCutoff: 400,
-    } as RustpotterConfig, config);
+    this.config = Object.assign(defaultConfig, config);
   }
   public onDetection(cb: (detection: Detection) => void) {
     this.spotListener = cb;
@@ -88,14 +72,15 @@ export class RustpotterService {
   }
   async removeWakewords(): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
-      this.resolveOnWorkerMsg(WorkerOutCmd.WAKEWORD_REMOVED, resolve, () => resolve(false));
+      this.resolveOnWorkerMsg(WorkerOutCmd.WAKEWORDS_REMOVED, resolve, () => resolve(false));
       this.workerPort([WorkerInCmd.REMOVE_WAKEWORDS, undefined]);
     });
   }
-  async updateConfig(config: RustpotterConfig) {
+  async updateConfig(config: Partial<RustpotterConfig>) {
+    this.config = Object.assign(this.config, config);
     await new Promise((resolve, reject) => {
       this.resolveOnWorkerMsg(WorkerOutCmd.CONFIG_UPDATED, resolve, () => reject(new Error("Unable to update config")));
-      this.workerPort([WorkerInCmd.UPDATE_CONFIG, config]);
+      this.workerPort([WorkerInCmd.UPDATE_CONFIG, this.config]);
     });
   }
   private async initWorker() {
@@ -166,3 +151,20 @@ export class RustpotterService {
     }, { once: true });
   }
 }
+
+const defaultConfig: RustpotterConfig = {
+  minScores: 5,
+  threshold: 0.5,
+  averagedThreshold: 0.25,
+  scoreRef: 0.22,
+  bandSize: 6,
+  vadMode: null,
+  scoreMode: ScoreMode.max,
+  gainNormalizerEnabled: false,
+  minGain: 0.1,
+  maxGain: 1,
+  gainRef: undefined,
+  bandPassEnabled: false,
+  bandPassLowCutoff: 85,
+  bandPassHighCutoff: 400,
+} as RustpotterConfig;

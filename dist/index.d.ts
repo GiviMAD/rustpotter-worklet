@@ -1,26 +1,28 @@
-import { Detection, RustpotterConfigInternal } from "./worker-cmds";
+import { Detection, RustpotterConfig, RustpotterResources } from "./worker-cmds";
 export { ScoreMode, VADMode } from "rustpotter-web-slim";
-export { Detection } from "./worker-cmds";
-export type RustpotterServiceConfig = Partial<RustpotterConfigInternal>;
+export { Detection, RustpotterConfig, RustpotterResources } from "./worker-cmds";
 export declare class RustpotterService {
+    private sampleRate;
+    private resources;
     private worker;
     private workerPort;
     private audioProcessorNode?;
     private config;
     private spotListener;
-    static new(config?: RustpotterServiceConfig): Promise<RustpotterService>;
-    private constructor();
     private readonly workerCallback;
+    static new(sampleRate: number, resources: RustpotterResources, config?: Partial<RustpotterConfig>): Promise<RustpotterService>;
+    private constructor();
     onDetection(cb: (detection: Detection) => void): void;
     close(): Promise<void>;
     getProcessorNode(audioContext: AudioContext): Promise<AudioWorkletNode>;
-    disposeProcessorNode(): Promise<unknown>;
+    disposeProcessorNode(): Promise<void>;
     addWakewordByPath(key: string, path: string, headers?: HeadersInit): Promise<boolean>;
     addWakeword(key: string, wakewordBytes: ArrayBuffer): Promise<boolean>;
     removeWakeword(key: string): Promise<boolean>;
     removeWakewords(): Promise<boolean>;
+    updateConfig(config: RustpotterConfig): Promise<void>;
     private initWorker;
     private initWorklet;
     private fetchResource;
-    private getWorkerMsgCallback;
+    private resolveOnWorkerMsg;
 }

@@ -1,31 +1,28 @@
 import { ScoreMode } from "rustpotter-web-slim";
-import { Detection, RustpotterConfigInternal, WorkerInCmd, WorkerInMsg, WorkerOutCmd as WorkerOutCmd, WorkerOutData, WorkerOutMsg } from "./worker-cmds";
+import { Detection, RustpotterConfig, RustpotterResources, WorkerInCmd, WorkerInMsg, WorkerOutCmd as WorkerOutCmd, WorkerOutData, WorkerOutMsg } from "./worker-cmds";
 export { ScoreMode, VADMode } from "rustpotter-web-slim";
-export { Detection } from "./worker-cmds";
-export type RustpotterServiceConfig = Partial<RustpotterConfigInternal>;
+export { Detection, RustpotterConfig, RustpotterResources } from "./worker-cmds";
 
 export class RustpotterService {
   private worker: Worker;
   private workerPort: (msg: WorkerInMsg, transfer?: Transferable[]) => void;
   private audioProcessorNode?: AudioWorkletNode;
-  private config: RustpotterConfigInternal;
+  private config: RustpotterConfig;
   private spotListener = (_: Detection) => { };
-
-  public static async new(config: RustpotterServiceConfig = {} as any): Promise<RustpotterService> {
-    const instance = new RustpotterService(config);
+  private readonly workerCallback = ({ data }: { data: WorkerOutMsg } & Event) => {
+    switch (data[0]) {
+      case WorkerOutCmd.DETECTION:
+        return this.spotListener(data[1]);
+    }
+  };
+  public static async new(sampleRate: number, resources: RustpotterResources, config: Partial<RustpotterConfig> = {} as any): Promise<RustpotterService> {
+    const instance = new RustpotterService(sampleRate, resources, config);
     await instance.initWorker();
     return instance;
   }
-
-  private constructor(config: RustpotterServiceConfig) {
+  private constructor(private sampleRate: number, private resources: RustpotterResources, config: Partial<RustpotterConfig>) {
     this.config = Object.assign({
-      workletPath: '/rustpotterWorklet.js',
-      workerPath: '/rustpotterWorker.js',
-      wasmPath: '/rustpotter_wasm_bg.wasm',
-      monitorGain: 0,
-      recordingGain: 1,
       // rustpotter options
-      sampleRate: 16000,
       minScores: 5,
       threshold: 0.5,
       averagedThreshold: 0.25,
@@ -40,15 +37,8 @@ export class RustpotterService {
       bandPassEnabled: false,
       bandPassLowCutoff: 85,
       bandPassHighCutoff: 400,
-    } as RustpotterConfigInternal, config);
+    } as RustpotterConfig, config);
   }
-
-  private readonly workerCallback = ({ data }: { data: WorkerOutMsg } & Event) => {
-    switch (data[0]) {
-      case WorkerOutCmd.DETECTION:
-        return this.spotListener(data[1]);
-    }
-  };
   public onDetection(cb: (detection: Detection) => void) {
     this.spotListener = cb;
   }
@@ -70,14 +60,13 @@ export class RustpotterService {
     if (!this.audioProcessorNode) {
       throw new Error("Processor node already disposed");
     }
-    return new Promise((resolve, reject) => {
+    await new Promise((resolve, reject) => {
       try {
         this.audioProcessorNode.disconnect();
       } catch {
       }
       this.audioProcessorNode = null;
-      const callback = this.getWorkerMsgCallback(WorkerOutCmd.PORT_STOPPED, resolve, () => reject(new Error("Unable to stop worklet")));
-      this.worker.addEventListener("message", callback, { once: true });
+      this.resolveOnWorkerMsg(WorkerOutCmd.PORT_STOPPED, resolve, () => reject(new Error("Unable to stop worklet")));
       this.workerPort([WorkerInCmd.STOP_PORT, undefined]);
     });
   }
@@ -87,27 +76,30 @@ export class RustpotterService {
   }
   async addWakeword(key: string, wakewordBytes: ArrayBuffer): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
-      const callback = this.getWorkerMsgCallback(WorkerOutCmd.WAKEWORD_ADDED, resolve, () => resolve(false));
-      this.worker.addEventListener("message", callback, { once: true });
+      this.resolveOnWorkerMsg(WorkerOutCmd.WAKEWORD_ADDED, resolve, () => resolve(false));
       this.workerPort([WorkerInCmd.ADD_WAKEWORD, [key, wakewordBytes]], [wakewordBytes]);
     });
   }
   async removeWakeword(key: string): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
-      const callback = this.getWorkerMsgCallback(WorkerOutCmd.WAKEWORD_REMOVED, resolve, () => resolve(false));
-      this.worker.addEventListener("message", callback, { once: true });
+      this.resolveOnWorkerMsg(WorkerOutCmd.WAKEWORD_REMOVED, resolve, () => resolve(false));
       this.workerPort([WorkerInCmd.REMOVE_WAKEWORD, key]);
     });
   }
   async removeWakewords(): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
-      const callback = this.getWorkerMsgCallback(WorkerOutCmd.WAKEWORD_REMOVED, resolve, () => resolve(false));
-      this.worker.addEventListener("message", callback, { once: true });
+      this.resolveOnWorkerMsg(WorkerOutCmd.WAKEWORD_REMOVED, resolve, () => resolve(false));
       this.workerPort([WorkerInCmd.REMOVE_WAKEWORDS, undefined]);
     });
   }
+  async updateConfig(config: RustpotterConfig) {
+    await new Promise((resolve, reject) => {
+      this.resolveOnWorkerMsg(WorkerOutCmd.CONFIG_UPDATED, resolve, () => reject(new Error("Unable to update config")));
+      this.workerPort([WorkerInCmd.UPDATE_CONFIG, config]);
+    });
+  }
   private async initWorker() {
-    const worker = this.worker = new window.Worker(this.config.workerPath);
+    const worker = this.worker = new window.Worker(this.resources.workerPath);
     this.workerPort = (msg, t) => worker.postMessage(msg, t);
     return new Promise<void>(async (resolve, reject) => {
       const callback = ({ data }: { data: WorkerOutMsg } & Event) => {
@@ -123,10 +115,11 @@ export class RustpotterService {
       };
       try {
         worker.addEventListener("message", callback, { once: true });
-        this.fetchResource(this.config.wasmPath)
+        this.fetchResource(this.resources.wasmPath)
           .then(wasmBytes =>
             this.workerPort([WorkerInCmd.START, {
               wasmBytes,
+              sampleRate: this.sampleRate,
               config: this.config,
             }])
           );
@@ -135,17 +128,16 @@ export class RustpotterService {
       }
     });
   }
-  private initWorklet(audioContext: AudioContext) {
-    if (audioContext.sampleRate != this.config.sampleRate) {
+  private async initWorklet(audioContext: AudioContext) {
+    if (audioContext.sampleRate != this.sampleRate) {
       throw new Error("Audio context sample rate is not correct");
     }
-    return new Promise(async (resolve, reject) => {
+    await new Promise(async (resolve, reject) => {
       try {
-        await audioContext.audioWorklet.addModule(this.config.workletPath);
+        await audioContext.audioWorklet.addModule(this.resources.workletPath);
         this.audioProcessorNode = new AudioWorkletNode(audioContext, 'rustpotter-worklet', { numberOfOutputs: 0 });
         const workletPort = this.audioProcessorNode.port;
-        const callback = this.getWorkerMsgCallback(WorkerOutCmd.PORT_STARTED, resolve, () => reject(new Error("Unable to setup rustpotter worklet")));
-        this.worker.addEventListener("message", callback, { once: true });
+        this.resolveOnWorkerMsg(WorkerOutCmd.PORT_STARTED, resolve, () => reject(new Error("Unable to setup rustpotter worklet")));
         this.workerPort([WorkerInCmd.START_PORT, workletPort], [workletPort]);
       } catch (error) {
         reject(error);
@@ -162,8 +154,8 @@ export class RustpotterService {
         }
       })
   }
-  private getWorkerMsgCallback<T extends WorkerOutCmd>(cmd: T, resolve: (value: WorkerOutData<T>) => void, reject: () => void) {
-    return ({ data }: { data: WorkerOutMsg; } & Event) => {
+  private resolveOnWorkerMsg<T extends WorkerOutCmd>(cmd: T, resolve: (value: WorkerOutData<T>) => void, reject: () => void) {
+    this.worker.addEventListener("message", ({ data }: { data: WorkerOutMsg; } & Event) => {
       if (data[0] == cmd) {
         if (data[1]) {
           return resolve(data[1] as WorkerOutData<T>);
@@ -171,6 +163,6 @@ export class RustpotterService {
           return reject();
         }
       }
-    };
+    }, { once: true });
   }
 }

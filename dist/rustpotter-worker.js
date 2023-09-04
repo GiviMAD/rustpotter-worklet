@@ -8,6 +8,7 @@ var WorkerOutCmd;
     WorkerOutCmd["WAKEWORD_ADDED"] = "wakeword_added";
     WorkerOutCmd["WAKEWORD_REMOVED"] = "wakeword_removed";
     WorkerOutCmd["WAKEWORDS_REMOVED"] = "wakewords_removed";
+    WorkerOutCmd["CONFIG_UPDATED"] = "config_updated";
 })(WorkerOutCmd || (WorkerOutCmd = {}));
 var WorkerInCmd;
 (function (WorkerInCmd) {
@@ -18,6 +19,7 @@ var WorkerInCmd;
     WorkerInCmd["REMOVE_WAKEWORDS"] = "remove_wakewords";
     WorkerInCmd["START_PORT"] = "start_port";
     WorkerInCmd["STOP_PORT"] = "stop_port";
+    WorkerInCmd["UPDATE_CONFIG"] = "update_config";
 })(WorkerInCmd || (WorkerInCmd = {}));
 
 let wasm;
@@ -66,6 +68,22 @@ function takeObject(idx) {
     const ret = getObject(idx);
     dropObject(idx);
     return ret;
+}
+
+function _assertClass(instance, klass) {
+    if (!(instance instanceof klass)) {
+        throw new Error(`expected instance of ${klass.name}`);
+    }
+    return instance.ptr;
+}
+
+let cachedInt32Memory0 = null;
+
+function getInt32Memory0() {
+    if (cachedInt32Memory0 === null || cachedInt32Memory0.byteLength === 0) {
+        cachedInt32Memory0 = new Int32Array(wasm.memory.buffer);
+    }
+    return cachedInt32Memory0;
 }
 
 let cachedUint32Memory0 = null;
@@ -178,15 +196,6 @@ function passStringToWasm0(arg, malloc, realloc) {
     return ptr;
 }
 
-let cachedInt32Memory0 = null;
-
-function getInt32Memory0() {
-    if (cachedInt32Memory0 === null || cachedInt32Memory0.byteLength === 0) {
-        cachedInt32Memory0 = new Int32Array(wasm.memory.buffer);
-    }
-    return cachedInt32Memory0;
-}
-
 function getArrayF32FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return getFloat32Memory0().subarray(ptr / 4, ptr / 4 + len);
@@ -228,6 +237,27 @@ class Rustpotter {
     free() {
         const ptr = this.__destroy_into_raw();
         wasm.__wbg_rustpotter_free(ptr);
+    }
+    /**
+    * Creates rustpotter instance.
+    * @param {RustpotterConfig} config
+    * @returns {Rustpotter}
+    */
+    static new(config) {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            _assertClass(config, RustpotterConfig);
+            wasm.rustpotter_new(retptr, config.__wbg_ptr);
+            var r0 = getInt32Memory0()[retptr / 4 + 0];
+            var r1 = getInt32Memory0()[retptr / 4 + 1];
+            var r2 = getInt32Memory0()[retptr / 4 + 2];
+            if (r2) {
+                throw takeObject(r1);
+            }
+            return Rustpotter.__wrap(r0);
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
     }
     /**
     * Process int 32 bit audio chunks.
@@ -339,6 +369,14 @@ class Rustpotter {
         return ret >>> 0;
     }
     /**
+    * Updates detector and audio filter options
+    * @param {RustpotterConfig} config
+    */
+    updateConfig(config) {
+        _assertClass(config, RustpotterConfig);
+        wasm.rustpotter_updateConfig(this.__wbg_ptr, config.__wbg_ptr);
+    }
+    /**
     * Reset internal state.
     */
     reset() {
@@ -347,11 +385,11 @@ class Rustpotter {
 }
 /**
 */
-class RustpotterBuilder {
+class RustpotterConfig {
 
     static __wrap(ptr) {
         ptr = ptr >>> 0;
-        const obj = Object.create(RustpotterBuilder.prototype);
+        const obj = Object.create(RustpotterConfig.prototype);
         obj.__wbg_ptr = ptr;
 
         return obj;
@@ -366,14 +404,14 @@ class RustpotterBuilder {
 
     free() {
         const ptr = this.__destroy_into_raw();
-        wasm.__wbg_rustpotterbuilder_free(ptr);
+        wasm.__wbg_rustpotterconfig_free(ptr);
     }
     /**
-    * @returns {RustpotterBuilder}
+    * @returns {RustpotterConfig}
     */
     static new() {
-        const ret = wasm.rustpotterbuilder_new();
-        return RustpotterBuilder.__wrap(ret);
+        const ret = wasm.rustpotterconfig_new();
+        return RustpotterConfig.__wrap(ret);
     }
     /**
     * Configures the detector threshold,
@@ -384,7 +422,7 @@ class RustpotterBuilder {
     * @param {number} value
     */
     setThreshold(value) {
-        wasm.rustpotterbuilder_setThreshold(this.__wbg_ptr, value);
+        wasm.rustpotterconfig_setThreshold(this.__wbg_ptr, value);
     }
     /**
     * Configures the detector averaged threshold,
@@ -395,7 +433,7 @@ class RustpotterBuilder {
     * @param {number} value
     */
     setAveragedThreshold(value) {
-        wasm.rustpotterbuilder_setAveragedThreshold(this.__wbg_ptr, value);
+        wasm.rustpotterconfig_setAveragedThreshold(this.__wbg_ptr, value);
     }
     /**
     * Configures the required number of partial detections
@@ -405,7 +443,7 @@ class RustpotterBuilder {
     * @param {number} value
     */
     setMinScores(value) {
-        wasm.rustpotterbuilder_setMinScores(this.__wbg_ptr, value);
+        wasm.rustpotterconfig_setMinScores(this.__wbg_ptr, value);
     }
     /**
     * Configures a basic vad detector to avoid some execution.
@@ -414,18 +452,17 @@ class RustpotterBuilder {
     * @param {number | undefined} value
     */
     setVADMode(value) {
-        wasm.rustpotterbuilder_setVADMode(this.__wbg_ptr, isLikeNone(value) ? 3 : value);
+        wasm.rustpotterconfig_setVADMode(this.__wbg_ptr, isLikeNone(value) ? 3 : value);
     }
     /**
-    * Configures the score operation to unify the score values
-    * against each wakeword template.
+    * Configures the operation used to unify the score against each record when using wakeword references.
     * Doesn't apply to trained wakewords.
     *
     * Defaults to max
     * @param {number} value
     */
     setScoreMode(value) {
-        wasm.rustpotterbuilder_setScoreMode(this.__wbg_ptr, value);
+        wasm.rustpotterconfig_setScoreMode(this.__wbg_ptr, value);
     }
     /**
     * Use a gain-normalization filter to dynamically change the input volume level.
@@ -434,7 +471,7 @@ class RustpotterBuilder {
     * @param {boolean} value
     */
     setGainNormalizerEnabled(value) {
-        wasm.rustpotterbuilder_setGainNormalizerEnabled(this.__wbg_ptr, value);
+        wasm.rustpotterconfig_setGainNormalizerEnabled(this.__wbg_ptr, value);
     }
     /**
     * Set the rms level reference used by the gain-normalizer filter.
@@ -444,7 +481,7 @@ class RustpotterBuilder {
     * @param {number | undefined} value
     */
     setGainRef(value) {
-        wasm.rustpotterbuilder_setGainRef(this.__wbg_ptr, !isLikeNone(value), isLikeNone(value) ? 0 : value);
+        wasm.rustpotterconfig_setGainRef(this.__wbg_ptr, !isLikeNone(value), isLikeNone(value) ? 0 : value);
     }
     /**
     * Sets the min gain applied by the gain-normalizer filter.
@@ -453,7 +490,7 @@ class RustpotterBuilder {
     * @param {number} value
     */
     setMinGain(value) {
-        wasm.rustpotterbuilder_setMinGain(this.__wbg_ptr, value);
+        wasm.rustpotterconfig_setMinGain(this.__wbg_ptr, value);
     }
     /**
     * Sets the max gain applied by the gain-normalizer filter.
@@ -462,7 +499,7 @@ class RustpotterBuilder {
     * @param {number} value
     */
     setMaxGain(value) {
-        wasm.rustpotterbuilder_setMaxGain(this.__wbg_ptr, value);
+        wasm.rustpotterconfig_setMaxGain(this.__wbg_ptr, value);
     }
     /**
     * Use a band-pass filter to attenuate frequencies
@@ -472,7 +509,7 @@ class RustpotterBuilder {
     * @param {boolean} value
     */
     setBandPassEnabled(value) {
-        wasm.rustpotterbuilder_setBandPassEnabled(this.__wbg_ptr, value);
+        wasm.rustpotterconfig_setBandPassEnabled(this.__wbg_ptr, value);
     }
     /**
     * Configures the low-cutoff frequency for the band-pass
@@ -482,7 +519,7 @@ class RustpotterBuilder {
     * @param {number} value
     */
     setBandPassLowCutoff(value) {
-        wasm.rustpotterbuilder_setBandPassLowCutoff(this.__wbg_ptr, value);
+        wasm.rustpotterconfig_setBandPassLowCutoff(this.__wbg_ptr, value);
     }
     /**
     * Configures the high-cutoff frequency for the band-pass
@@ -492,7 +529,7 @@ class RustpotterBuilder {
     * @param {number} value
     */
     setBandPassHighCutoff(value) {
-        wasm.rustpotterbuilder_setBandPassHighCutoff(this.__wbg_ptr, value);
+        wasm.rustpotterconfig_setBandPassHighCutoff(this.__wbg_ptr, value);
     }
     /**
     * Configures the detector expected sample rate for the audio chunks to process.
@@ -501,7 +538,7 @@ class RustpotterBuilder {
     * @param {number} value
     */
     setSampleRate(value) {
-        wasm.rustpotterbuilder_setSampleRate(this.__wbg_ptr, value);
+        wasm.rustpotterconfig_setSampleRate(this.__wbg_ptr, value);
     }
     /**
     * Configures the detector expected sample format for the audio chunks to process.
@@ -510,7 +547,7 @@ class RustpotterBuilder {
     * @param {number} value
     */
     setSampleFormat(value) {
-        wasm.rustpotterbuilder_setSampleFormat(this.__wbg_ptr, value);
+        wasm.rustpotterconfig_setSampleFormat(this.__wbg_ptr, value);
     }
     /**
     * Configures the detector expected number of channels for the audio chunks to process.
@@ -520,17 +557,17 @@ class RustpotterBuilder {
     * @param {number} value
     */
     setChannels(value) {
-        wasm.rustpotterbuilder_setChannels(this.__wbg_ptr, value);
+        wasm.rustpotterconfig_setChannels(this.__wbg_ptr, value);
     }
     /**
     * Configures the comparator the band size.
     * Doesn't apply to trained wakewords.
     *
-    * Defaults to 6
+    * Defaults to 5
     * @param {number} value
     */
     setBandSize(value) {
-        wasm.rustpotterbuilder_setBandSize(this.__wbg_ptr, value);
+        wasm.rustpotterconfig_setBandSize(this.__wbg_ptr, value);
     }
     /**
     * Value used to express the score as a percent in range 0 - 1.
@@ -539,26 +576,16 @@ class RustpotterBuilder {
     * @param {number} value
     */
     setScoreRef(value) {
-        wasm.rustpotterbuilder_setScoreRef(this.__wbg_ptr, value);
+        wasm.rustpotterconfig_setScoreRef(this.__wbg_ptr, value);
     }
     /**
-    * construct the wakeword detector
-    * @returns {Rustpotter}
+    * Emit detection on min scores.
+    *
+    * Defaults to false
+    * @param {boolean} value
     */
-    build() {
-        try {
-            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-            wasm.rustpotterbuilder_build(retptr, this.__wbg_ptr);
-            var r0 = getInt32Memory0()[retptr / 4 + 0];
-            var r1 = getInt32Memory0()[retptr / 4 + 1];
-            var r2 = getInt32Memory0()[retptr / 4 + 2];
-            if (r2) {
-                throw takeObject(r1);
-            }
-            return Rustpotter.__wrap(r0);
-        } finally {
-            wasm.__wbindgen_add_to_stack_pointer(16);
-        }
+    setEager(value) {
+        wasm.rustpotterconfig_setEager(this.__wbg_ptr, value);
     }
 }
 /**
@@ -621,6 +648,24 @@ class RustpotterDetection {
         return ret;
     }
     /**
+    * Get detection score by file name
+    * @param {string} name
+    * @returns {number | undefined}
+    */
+    getScoreByName(name) {
+        try {
+            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
+            const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+            const len0 = WASM_VECTOR_LEN;
+            wasm.rustpotterdetection_getScoreByName(retptr, this.__wbg_ptr, ptr0, len0);
+            var r0 = getInt32Memory0()[retptr / 4 + 0];
+            var r1 = getFloat32Memory0()[retptr / 4 + 1];
+            return r0 === 0 ? undefined : r1;
+        } finally {
+            wasm.__wbindgen_add_to_stack_pointer(16);
+        }
+    }
+    /**
     * Get score file names as a || separated string
     * @returns {string}
     */
@@ -638,24 +683,6 @@ class RustpotterDetection {
         } finally {
             wasm.__wbindgen_add_to_stack_pointer(16);
             wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
-        }
-    }
-    /**
-    * Get detection score by file name
-    * @param {string} name
-    * @returns {number | undefined}
-    */
-    getScoreByName(name) {
-        try {
-            const retptr = wasm.__wbindgen_add_to_stack_pointer(-16);
-            const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-            const len0 = WASM_VECTOR_LEN;
-            wasm.rustpotterdetection_getScoreByName(retptr, this.__wbg_ptr, ptr0, len0);
-            var r0 = getInt32Memory0()[retptr / 4 + 0];
-            var r1 = getFloat32Memory0()[retptr / 4 + 1];
-            return r0 === 0 ? undefined : r1;
-        } finally {
-            wasm.__wbindgen_add_to_stack_pointer(16);
         }
     }
     /**
@@ -857,38 +884,21 @@ var WorkletInCmd;
 })(WorkletInCmd || (WorkletInCmd = {}));
 
 class RustpotterWorkerImpl {
-    constructor(wasmBytes, config, postMessage) {
-        this.config = config;
+    constructor(sampleRate, wasmBytes, config, postMessage) {
         this.postMessage = postMessage;
         this.workletAudioCallback = ({ data }) => {
-            switch (data[0]) {
-                case WorkletOutCommands.AUDIO:
-                    this.process(data[1]);
-                    break;
+            if (data[0] == WorkletOutCommands.AUDIO) {
+                this.process(data[1]);
             }
         };
         initSync(wasmBytes);
-        const builder = RustpotterBuilder.new();
-        builder.setSampleRate(this.config.sampleRate);
-        builder.setSampleFormat(SampleFormat.f32);
-        builder.setChannels(1);
-        builder.setAveragedThreshold(this.config.averagedThreshold);
-        builder.setThreshold(this.config.threshold);
-        builder.setScoreRef(this.config.scoreRef);
-        builder.setBandSize(this.config.bandSize);
-        builder.setMinScores(this.config.minScores);
-        builder.setScoreMode(this.config.scoreMode);
-        builder.setVADMode(this.config.vadMode);
-        builder.setGainNormalizerEnabled(this.config.gainNormalizerEnabled);
-        builder.setMinGain(this.config.minGain);
-        builder.setMaxGain(this.config.maxGain);
-        if (this.config.gainRef != null)
-            builder.setGainRef(this.config.gainRef);
-        builder.setBandPassEnabled(this.config.bandPassEnabled);
-        builder.setBandPassLowCutoff(this.config.bandPassLowCutoff);
-        builder.setBandPassHighCutoff(this.config.bandPassHighCutoff);
-        this.rustpotter = builder.build();
-        builder.free();
+        const rustpotterConfig = RustpotterConfig.new();
+        rustpotterConfig.setSampleRate(sampleRate);
+        rustpotterConfig.setSampleFormat(SampleFormat.f32);
+        rustpotterConfig.setChannels(1);
+        this.setConfigOptions(rustpotterConfig, config);
+        this.rustpotter = Rustpotter.new(rustpotterConfig);
+        rustpotterConfig.free();
     }
     getSamplesPerFrame() {
         return this.rustpotter.getSamplesPerFrame();
@@ -897,39 +907,25 @@ class RustpotterWorkerImpl {
         var _a;
         this.handleDetection((_a = this.rustpotter) === null || _a === void 0 ? void 0 : _a.processF32(audioSamples));
     }
+    updateConfig(config) {
+        try {
+            const rustpotterConfig = RustpotterConfig.new();
+            this.setConfigOptions(rustpotterConfig, config);
+            this.rustpotter.updateConfig(rustpotterConfig);
+            return true;
+        }
+        catch (err) {
+            console.error(err);
+            return false;
+        }
+    }
     handleCommand(msg) {
-        var _a, _b, _c, _d;
         switch (msg[0]) {
-            case WorkerInCmd.STOP_PORT:
-                (_a = this.workletPort) === null || _a === void 0 ? void 0 : _a.removeEventListener("message", this.workletAudioCallback);
-                (_b = this.workletPort) === null || _b === void 0 ? void 0 : _b.postMessage([WorkletInCmd.STOP, undefined]);
-                (_c = this.workletPort) === null || _c === void 0 ? void 0 : _c.close();
-                this.workletPort = undefined;
-                this.rustpotter.reset();
-                this.postMessage([WorkerOutCmd.PORT_STOPPED, true]);
-                break;
             case WorkerInCmd.START_PORT:
-                (_d = this.workletPort) === null || _d === void 0 ? void 0 : _d.close();
-                this.workletPort = msg[1];
-                const callback = ({ data }) => {
-                    var _a;
-                    switch (data[0]) {
-                        case WorkletOutCommands.STARTED:
-                            if (data[1]) {
-                                (_a = this.workletPort) === null || _a === void 0 ? void 0 : _a.addEventListener("message", this.workletAudioCallback);
-                                this.postMessage([WorkerOutCmd.PORT_STARTED, true]);
-                            }
-                            else {
-                                this.postMessage([WorkerOutCmd.PORT_STARTED, false]);
-                            }
-                            break;
-                    }
-                };
-                this.workletPort.addEventListener("message", callback, { once: true });
-                if (this.workletPort.start) {
-                    this.workletPort.start();
-                }
-                this.workletPort.postMessage([WorkletInCmd.START, this.getSamplesPerFrame()]);
+                this.startWorkletPort(msg[1]).then(result => this.postMessage([WorkerOutCmd.PORT_STARTED, result]));
+                break;
+            case WorkerInCmd.STOP_PORT:
+                this.postMessage([WorkerOutCmd.PORT_STOPPED, this.stopWorkletPort()]);
                 break;
             case WorkerInCmd.ADD_WAKEWORD:
                 this.postMessage([WorkerOutCmd.WAKEWORD_ADDED, this.addWakeword(...msg[1])]);
@@ -939,6 +935,9 @@ class RustpotterWorkerImpl {
                 break;
             case WorkerInCmd.REMOVE_WAKEWORDS:
                 this.postMessage([WorkerOutCmd.WAKEWORDS_REMOVED, this.removeWakewords()]);
+                break;
+            case WorkerInCmd.UPDATE_CONFIG:
+                this.postMessage([WorkerOutCmd.CONFIG_UPDATED, this.updateConfig(msg[1])]);
                 break;
             case WorkerInCmd.STOP:
                 this.close();
@@ -980,6 +979,63 @@ class RustpotterWorkerImpl {
             return false;
         }
     }
+    stopWorkletPort() {
+        var _a, _b, _c;
+        try {
+            (_a = this.workletPort) === null || _a === void 0 ? void 0 : _a.removeEventListener("message", this.workletAudioCallback);
+            (_b = this.workletPort) === null || _b === void 0 ? void 0 : _b.postMessage([WorkletInCmd.STOP, undefined]);
+            (_c = this.workletPort) === null || _c === void 0 ? void 0 : _c.close();
+            this.workletPort = undefined;
+            this.rustpotter.reset();
+            return true;
+        }
+        catch (error) {
+            console.error(error);
+            return false;
+        }
+    }
+    startWorkletPort(port) {
+        return new Promise(resolve => {
+            var _a, _b, _c;
+            try {
+                (_a = this.workletPort) === null || _a === void 0 ? void 0 : _a.removeEventListener("message", this.workletAudioCallback);
+                (_b = this.workletPort) === null || _b === void 0 ? void 0 : _b.close();
+                this.workletPort = port;
+                port.addEventListener("message", ({ data }) => {
+                    if (data[0] == WorkletOutCommands.STARTED) {
+                        if (data[1]) {
+                            port.addEventListener("message", this.workletAudioCallback);
+                            resolve(true);
+                        }
+                        else {
+                            resolve(false);
+                        }
+                    }
+                }, { once: true });
+                (_c = port.start) === null || _c === void 0 ? void 0 : _c.call(port);
+                port.postMessage([WorkletInCmd.START, this.getSamplesPerFrame()]);
+            }
+            catch (error) {
+                resolve(false);
+            }
+        });
+    }
+    setConfigOptions(rustpotterConfig, config) {
+        rustpotterConfig.setAveragedThreshold(config.averagedThreshold);
+        rustpotterConfig.setThreshold(config.threshold);
+        rustpotterConfig.setScoreRef(config.scoreRef);
+        rustpotterConfig.setBandSize(config.bandSize);
+        rustpotterConfig.setMinScores(config.minScores);
+        rustpotterConfig.setScoreMode(config.scoreMode);
+        rustpotterConfig.setVADMode(config.vadMode);
+        rustpotterConfig.setGainNormalizerEnabled(config.gainNormalizerEnabled);
+        rustpotterConfig.setMinGain(config.minGain);
+        rustpotterConfig.setMaxGain(config.maxGain);
+        rustpotterConfig.setGainRef(config.gainRef);
+        rustpotterConfig.setBandPassEnabled(config.bandPassEnabled);
+        rustpotterConfig.setBandPassLowCutoff(config.bandPassLowCutoff);
+        rustpotterConfig.setBandPassHighCutoff(config.bandPassHighCutoff);
+    }
     handleDetection(detection) {
         if (detection) {
             const scoreNames = detection.getScoreNames().split("||");
@@ -1015,7 +1071,7 @@ onmessage = ({ data }) => {
                     throw new Error("Starting");
                 }
                 starting = true;
-                implementation = new RustpotterWorkerImpl(data[1].wasmBytes, data[1].config, (msg) => postMessage(msg));
+                implementation = new RustpotterWorkerImpl(data[1].sampleRate, data[1].wasmBytes, data[1].config, (msg) => postMessage(msg));
                 postMessage([WorkerOutCmd.STARTED, true]);
             }
             catch (err) {

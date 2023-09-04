@@ -1,31 +1,23 @@
-import { WorkerInMsg, WorkerInCmd as WorkerInCmd, WorkerOutCmd, RustpotterConfigInternal, WorkerOutMsg } from './worker-cmds';
-import { RustpotterDetection, Rustpotter, RustpotterBuilder, SampleFormat, initSync } from "rustpotter-web-slim";
+import { WorkerInMsg, WorkerInCmd as WorkerInCmd, WorkerOutCmd, RustpotterConfig as RustpotterConfigJS, WorkerOutMsg } from './worker-cmds';
+import { RustpotterDetection, Rustpotter, RustpotterConfig, SampleFormat, initSync } from "rustpotter-web-slim";
 import { WorkletInCmd, WorkletInMsg, WorkletOutCommands, WorkletOutMsg } from './worklet-cmds';
 class RustpotterWorkerImpl {
     private rustpotter: Rustpotter;
     private workletPort?: MessagePort;
-    constructor(wasmBytes: ArrayBuffer, private config: RustpotterConfigInternal, private postMessage: (msg: WorkerOutMsg) => void) {
+    private workletAudioCallback = ({ data }: { data: WorkletOutMsg } & Event) => {
+        if (data[0] == WorkletOutCommands.AUDIO) {
+            this.process(data[1]);
+        }
+    }
+    constructor(sampleRate: number, wasmBytes: ArrayBuffer, config: RustpotterConfigJS, private postMessage: (msg: WorkerOutMsg) => void) {
         initSync(wasmBytes);
-        const builder = RustpotterBuilder.new();
-        builder.setSampleRate(this.config.sampleRate);
-        builder.setSampleFormat(SampleFormat.f32);
-        builder.setChannels(1);
-        builder.setAveragedThreshold(this.config.averagedThreshold);
-        builder.setThreshold(this.config.threshold);
-        builder.setScoreRef(this.config.scoreRef);
-        builder.setBandSize(this.config.bandSize);
-        builder.setMinScores(this.config.minScores);
-        builder.setScoreMode(this.config.scoreMode);
-        builder.setVADMode(this.config.vadMode);
-        builder.setGainNormalizerEnabled(this.config.gainNormalizerEnabled);
-        builder.setMinGain(this.config.minGain);
-        builder.setMaxGain(this.config.maxGain);
-        if (this.config.gainRef != null) builder.setGainRef(this.config.gainRef);
-        builder.setBandPassEnabled(this.config.bandPassEnabled);
-        builder.setBandPassLowCutoff(this.config.bandPassLowCutoff);
-        builder.setBandPassHighCutoff(this.config.bandPassHighCutoff);
-        this.rustpotter = builder.build();
-        builder.free();
+        const rustpotterConfig = RustpotterConfig.new();
+        rustpotterConfig.setSampleRate(sampleRate);
+        rustpotterConfig.setSampleFormat(SampleFormat.f32);
+        rustpotterConfig.setChannels(1);
+        this.setConfigOptions(rustpotterConfig, config);
+        this.rustpotter = Rustpotter.new(rustpotterConfig);
+        rustpotterConfig.free();
     }
     getSamplesPerFrame() {
         return this.rustpotter.getSamplesPerFrame()
@@ -33,36 +25,24 @@ class RustpotterWorkerImpl {
     process(audioSamples: Float32Array) {
         this.handleDetection(this.rustpotter?.processF32(audioSamples));
     }
+    updateConfig(config: RustpotterConfigJS) {
+        try {
+            const rustpotterConfig = RustpotterConfig.new();
+            this.setConfigOptions(rustpotterConfig, config);
+            this.rustpotter.updateConfig(rustpotterConfig);
+            return true;
+        } catch (err) {
+            console.error(err);
+            return false;
+        }
+    }
     handleCommand(msg: WorkerInMsg) {
         switch (msg[0]) {
-            case WorkerInCmd.STOP_PORT:
-                this.workletPort?.removeEventListener("message", this.workletAudioCallback);
-                this.workletPort?.postMessage([WorkletInCmd.STOP, undefined] as WorkletInMsg)
-                this.workletPort?.close();
-                this.workletPort = undefined;
-                this.rustpotter.reset();
-                this.postMessage([WorkerOutCmd.PORT_STOPPED, true]);
-                break;
             case WorkerInCmd.START_PORT:
-                this.workletPort?.close();
-                this.workletPort = msg[1];
-                const callback = ({ data }: { data: WorkletOutCommands } & Event) => {
-                    switch (data[0]) {
-                        case WorkletOutCommands.STARTED:
-                            if (data[1]) {
-                                this.workletPort?.addEventListener("message", this.workletAudioCallback);
-                                this.postMessage([WorkerOutCmd.PORT_STARTED, true]);
-                            } else {
-                                this.postMessage([WorkerOutCmd.PORT_STARTED, false]);
-                            }
-                            break;
-                    }
-                };
-                this.workletPort.addEventListener("message", callback, { once: true });
-                if ((this.workletPort as MessagePort).start) {
-                    (this.workletPort as MessagePort).start()
-                }
-                this.workletPort.postMessage([WorkletInCmd.START, this.getSamplesPerFrame()] as WorkletInMsg);
+                this.startWorkletPort(msg[1]).then(result => this.postMessage([WorkerOutCmd.PORT_STARTED, result]));
+                break;
+            case WorkerInCmd.STOP_PORT:
+                this.postMessage([WorkerOutCmd.PORT_STOPPED, this.stopWorkletPort()]);
                 break;
             case WorkerInCmd.ADD_WAKEWORD:
                 this.postMessage([WorkerOutCmd.WAKEWORD_ADDED, this.addWakeword(...msg[1])]);
@@ -73,6 +53,9 @@ class RustpotterWorkerImpl {
             case WorkerInCmd.REMOVE_WAKEWORDS:
                 this.postMessage([WorkerOutCmd.WAKEWORDS_REMOVED, this.removeWakewords()]);
                 break;
+            case WorkerInCmd.UPDATE_CONFIG:
+                this.postMessage([WorkerOutCmd.CONFIG_UPDATED, this.updateConfig(msg[1])]);
+                break;
             case WorkerInCmd.STOP:
                 this.close();
                 this.postMessage([WorkerOutCmd.STOPPED, true]);
@@ -82,11 +65,9 @@ class RustpotterWorkerImpl {
                 console.warn("Unsupported command " + msg[0]);
         }
     }
-
     close() {
         this.rustpotter.free();
     }
-
     private addWakeword(key: string, data: ArrayBuffer) {
         try {
             this.rustpotter.addWakeword(key, new Uint8Array(data));
@@ -96,7 +77,6 @@ class RustpotterWorkerImpl {
             return false;
         }
     }
-
     private removeWakeword(key: string) {
         try {
             return this.rustpotter.removeWakeword(key);
@@ -105,7 +85,6 @@ class RustpotterWorkerImpl {
             return false;
         }
     }
-
     private removeWakewords() {
         try {
             return this.rustpotter.removeWakewords();
@@ -114,13 +93,57 @@ class RustpotterWorkerImpl {
             return false;
         }
     }
-
-    private workletAudioCallback = ({ data }: { data: WorkletOutMsg } & Event) => {
-        switch (data[0]) {
-            case WorkletOutCommands.AUDIO:
-                this.process(data[1]);
-                break;
+    private stopWorkletPort() {
+        try {
+            this.workletPort?.removeEventListener("message", this.workletAudioCallback);
+            this.workletPort?.postMessage([WorkletInCmd.STOP, undefined] as WorkletInMsg);
+            this.workletPort?.close();
+            this.workletPort = undefined;
+            this.rustpotter.reset();
+            return true;
+        } catch (error) {
+            console.error(error);
+            return false;
         }
+    }
+    private startWorkletPort(port: MessagePort) {
+        return new Promise<boolean>(resolve => {
+            try {
+                this.workletPort?.removeEventListener("message", this.workletAudioCallback);
+                this.workletPort?.close();
+                this.workletPort = port;
+                port.addEventListener("message", ({ data }: { data: WorkletOutCommands; } & Event) => {
+                    if (data[0] == WorkletOutCommands.STARTED) {
+                        if (data[1]) {
+                            port.addEventListener("message", this.workletAudioCallback);
+                            resolve(true);
+                        } else {
+                            resolve(false);
+                        }
+                    }
+                }, { once: true });
+                port.start?.();
+                port.postMessage([WorkletInCmd.START, this.getSamplesPerFrame()] as WorkletInMsg);
+            } catch (error) {
+                resolve(false);
+            }
+        });
+    }
+    private setConfigOptions(rustpotterConfig: RustpotterConfig, config: RustpotterConfigJS) {
+        rustpotterConfig.setAveragedThreshold(config.averagedThreshold);
+        rustpotterConfig.setThreshold(config.threshold);
+        rustpotterConfig.setScoreRef(config.scoreRef);
+        rustpotterConfig.setBandSize(config.bandSize);
+        rustpotterConfig.setMinScores(config.minScores);
+        rustpotterConfig.setScoreMode(config.scoreMode);
+        rustpotterConfig.setVADMode(config.vadMode);
+        rustpotterConfig.setGainNormalizerEnabled(config.gainNormalizerEnabled);
+        rustpotterConfig.setMinGain(config.minGain);
+        rustpotterConfig.setMaxGain(config.maxGain);
+        rustpotterConfig.setGainRef(config.gainRef);
+        rustpotterConfig.setBandPassEnabled(config.bandPassEnabled);
+        rustpotterConfig.setBandPassLowCutoff(config.bandPassLowCutoff);
+        rustpotterConfig.setBandPassHighCutoff(config.bandPassHighCutoff);
     }
     private handleDetection(detection?: RustpotterDetection) {
         if (detection) {
@@ -159,6 +182,7 @@ onmessage = ({ data }: { data: WorkerInMsg }) => {
                 }
                 starting = true;
                 implementation = new RustpotterWorkerImpl(
+                    data[1].sampleRate,
                     data[1].wasmBytes,
                     data[1].config,
                     (msg) => postMessage(msg),

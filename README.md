@@ -12,43 +12,49 @@ This package exposed a RustpotterService class that you can use to create and co
 
 The RustpotterService should be able to download the code for the worklet and the rustpotter wasm module, by default it assumes the files "/rustpotterWorklet.js" and "/rustpotter_wasm_bg.wasm" are available for download. 
 
-This is an example of how to include the required files automatically using webpack 5 (for webpack 4 you can use file-loader to achieve something similar):
+# Basic Usage Example
 
 
 ```js
+    import { RustpotterService } from "rustpotter-worklet";
+    // Urls to the requires sources
     const wasmModuleUrl = new URL('../node_modules/rustpotter-worklet/dist/rustpotter_wasm_bg.wasm', import.meta.url);
-    const workletUrl = new URL('../node_modules/rustpotter-worklet/dist/rustpotterWorklet.js', import.meta.url);
-    const { RustpotterService } = await import("rustpotter-worklet");
-    if (!RustpotterService.isRecordingSupported()) {
-        alert("Unable to record in this browser :(");
-    }
-    const rustpotterService = new RustpotterService({
+    const workletUrl = new URL('../node_modules/rustpotter-worklet/dist/rustpotter-worklet.js', import.meta.url);
+    const workletUrl = new URL('../node_modules/rustpotter-worklet/dist/rustpotter-worker.js', import.meta.url);
+    // Init audio context
+    const audioContext = new AudioContext();
+    const rustpotter = await RustpotterService.new({
         workletPath: workletUrl.href,
+        workerPath: workerUrl.href,
         wasmPath: wasmModuleUrl.href,
         averagedThreshold: 0.25,
         threshold: 0.5,
+        sampleRate: audioContext.sampleRate
     });
-    rustpotterService.onspot = (name, score) => {
-        console.log(`detection: '${name}'[${score}]`);
-    };
-    rustpotterService.onstart = function () {
-        console.info('rustpotterService is started');
-    };
+    rustpotter.onDetection(d => console.log(d));
+    rustpotter.addWakewordByPath("/static/wakeword.rpw");
+    let rustpotterWorklet = rustpotter.getNodeProcessor();
+    // get media stream source node (requires user interaction event)
+    const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+            autoGainControl: true,
+            echoCancellation: true,
+            noiseSuppression: true,
+        },
+        video: false,
+    });
+    const sourceNode = audioContext.createMediaStreamSource(stream);
+    // chain rustpotter audio processor
+    sourceNode.connect(rustpotterWorklet);
+    ...
+    // If you need to recreate the worklet because the audio streaming was interrupted
+    rustpotter.disposeNodeProcessor();
+    rustpotterWorklet = rustpotter.getNodeProcessor();
+    ...
+    // If you want to dispose rustpotter
+    rustpotter.close();
 
-    rustpotterService.onstop = function () {
-        console.info('rustpotterService is stopped');
-    };
 
-    rustpotterService.onpause = function () {
-        console.info('rustpotterService is paused');
-    };
 
-    rustpotterService.onresume = function () {
-        console.info('rustpotterService is resuming');
-    };
-    rustpotterService
-        .start()
-        .then(() => rustpotterService.addWakewordByPath("wakeword.rpw")) // a wakeword file available for download
-        .catch(err => console.error(err));
 ```
 

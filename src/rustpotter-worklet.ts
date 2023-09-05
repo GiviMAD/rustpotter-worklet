@@ -1,57 +1,20 @@
-import './text-encoding-polyfill';
-import type { RustpotterServiceConfigInternal, Detection } from './index';
-import init, { RustpotterDetection, Rustpotter, RustpotterBuilder, SampleFormat } from "rustpotter-web-slim";
+import { WorkletInCmd, WorkletInMsg, WorkletOutCommands, WorkletOutMsg } from './worklet-cmds';
 class RustpotterWorkletImpl {
-  private wasmLoadedPromise: Promise<void>;
-  private rustpotter: Rustpotter;
   private samples: Float32Array;
   private samplesOffset: number;
-  private rustpotterFrameSize: number;
-  constructor(wasmBytes: ArrayBuffer, private config: { sampleRate: number, } & RustpotterServiceConfigInternal, private onSpot: (detection: Detection) => void) {
-    if (!this.config['sampleRate']) {
-      throw new Error("sampleRate value is required to record. NOTE: Audio is not resampled!");
-    }
+
+  constructor(private samplesPerFrame: number, private sendMsg: (...msg: WorkletOutMsg) => void) {
     this.samplesOffset = 0;
-    this.wasmLoadedPromise = (async () => {
-      await init(WebAssembly.compile(wasmBytes));
-      const builder = RustpotterBuilder.new();
-      builder.setSampleRate(this.config.sampleRate);
-      builder.setSampleFormat(SampleFormat.float);
-      builder.setBitsPerSample(32);
-      builder.setChannels(1);
-      builder.setAveragedThreshold(this.config.averagedThreshold);
-      builder.setThreshold(this.config.threshold);
-      builder.setComparatorRef(this.config.comparatorRef);
-      builder.setComparatorBandSize(this.config.comparatorBandSize);
-      builder.setMinScores(this.config.minScores);
-      builder.setScoreMode(this.config.scoreMode);
-      builder.setGainNormalizerEnabled(this.config.gainNormalizerEnabled);
-      builder.setMinGain(this.config.minGain);
-      builder.setMaxGain(this.config.maxGain);
-      if (this.config.gainRef != null) builder.setGainRef(this.config.gainRef);
-      builder.setBandPassEnabled(this.config.bandPassEnabled);
-      builder.setBandPassLowCutoff(this.config.bandPassLowCutoff);
-      builder.setBandPassHighCutoff(this.config.bandPassHighCutoff);
-      this.rustpotter = builder.build();
-      this.rustpotterFrameSize = this.rustpotter.getFrameSize();
-      this.samples = new Float32Array(this.rustpotterFrameSize);
-      builder.free();
-    })();
-  }
-  waitReady() {
-    return this.wasmLoadedPromise;
-  }
-  addWakeword(data: Uint8Array) {
-    this.rustpotter.addWakeword(data);
+    this.samples = new Float32Array(this.samplesPerFrame);
   }
   process(buffers: Float32Array[]) {
     const channelBuffer = buffers[0];
-    const requiredSamples = this.rustpotterFrameSize - this.samplesOffset;
+    const requiredSamples = this.samplesPerFrame - this.samplesOffset;
     if (channelBuffer.length >= requiredSamples) {
       this.samples.set(channelBuffer.subarray(0, requiredSamples), this.samplesOffset);
-      this.handleDetection(this.rustpotter.processFloat32(this.samples));
+      this.sendMsg(WorkletOutCommands.AUDIO, this.samples);
       const remaining = channelBuffer.subarray(requiredSamples);
-      if (remaining.length >= this.rustpotterFrameSize) {
+      if (remaining.length >= this.samplesPerFrame) {
         this.samplesOffset = 0;
         this.process([remaining]);
       } else if (remaining.length > 0) {
@@ -65,31 +28,6 @@ class RustpotterWorkletImpl {
       this.samplesOffset += channelBuffer.length;
     }
   }
-  private handleDetection(detection: RustpotterDetection) {
-    if (detection) {
-      const scoreNames = detection.getScoreNames().split("||");
-      const scores = detection.getScores().reduce((acc, v, i) => {
-        const scoreName = scoreNames[i];
-        if (scoreName) {
-          acc[scoreName] = v;
-        }
-        return acc;
-      }, {} as { [key: string]: number });
-      this.onSpot({
-        name: detection.getName(),
-        avgScore: detection.getAvgScore(),
-        score: detection.getScore(),
-        counter: detection.getCounter(),
-        gain: detection.getGain(),
-        scores
-      });
-      detection.free();
-    }
-  }
-
-  close() {
-    this.rustpotter.free();
-  }
 }
 
 // register worker
@@ -97,62 +35,31 @@ if (typeof registerProcessor === 'function') {
   // Run in AudioWorkletGlobal scope
   class RustpotterWorklet extends AudioWorkletProcessor {
     continueProcess: boolean;
-    recorder?: RustpotterWorkletImpl;
+    implementation?: RustpotterWorkletImpl;
     constructor() {
       super();
       this.continueProcess = true;
-      this.port.onmessage = ({ data }) => {
-        switch (data['command']) {
-          case 'close':
-            this.continueProcess = false;
-            break;
-          case 'done':
-            this.continueProcess = false;
-            if (this.recorder) {
-              this.recorder.close();
-              this.recorder = null;
-            }
-            this.port.postMessage({ type: 'done' });
-            break;
-          case 'init':
-            const wasmBytes = data['wasmBytes'];
-            delete data['wasmBytes'];
-            this.recorder = new RustpotterWorkletImpl(
-              wasmBytes,
-              data,
-              detection => this.port.postMessage({ type: 'detection', detection }),
+      this.port.onmessage = ({ data }: { data: WorkletInMsg }) => {
+        switch (data[0]) {
+          case WorkletInCmd.START:
+            this.implementation = new RustpotterWorkletImpl(
+              data[1],
+              (...msg) => this.port.postMessage(msg),
             );
-            this.recorder.waitReady()
-              .then(() => {
-                this.port.postMessage({ type: 'rustpotter-ready' });
-              })
-              .catch((err: any) => {
-                console.error(err);
-                this.port.postMessage({ type: 'rustpotter-error' });
-              });
+            this.port.postMessage([WorkletOutCommands.STARTED, true] as WorkletOutMsg);
             break;
-          case 'wakeword':
-            const wakewordData = new Uint8Array(data["wakewordBytes"]);
-            if (!this.recorder) {
-              this.port.postMessage({ type: 'wakeword-error' });
-            }
-            try {
-              this.recorder.addWakeword(wakewordData);
-              this.port.postMessage({ type: 'wakeword-loaded' });
-            } catch (error) {
-              console.error(error);
-              this.port.postMessage({ type: 'wakeword-error' });
-            }
+          case WorkletInCmd.STOP:
+            this.continueProcess = false;
+            this.port.postMessage([WorkletOutCommands.STOPPED, undefined] as WorkletOutMsg);
             break;
           default:
-            // Ignore any unknown commands and continue recieving commands
-            console.error("Unknown command")
+            console.warn(`Unknown command ${data[0]}`);
         }
       }
     }
     process(inputs: Float32Array[][]) {
-      if (this.recorder && inputs[0] && inputs[0].length && inputs[0][0] && inputs[0][0].length) {
-        this.recorder.process(inputs[0]);
+      if (this.implementation && inputs[0] && inputs[0].length && inputs[0][0] && inputs[0][0].length) {
+        this.implementation.process(inputs[0]);
       }
       return this.continueProcess;
     }
@@ -160,57 +67,28 @@ if (typeof registerProcessor === 'function') {
   registerProcessor('rustpotter-worklet', RustpotterWorklet);
 } else {
   // run in scriptProcessor worker scope
-  let recorder: RustpotterWorkletImpl;
-  onmessage = ({ data }) => {
-    switch (data['command']) {
-      case 'process':
-        if (recorder) {
-          recorder.process(data['buffers']);
+  let implementation: RustpotterWorkletImpl;
+  onmessage = ({ data }: { data: WorkletInMsg }) => {
+    switch (data[0]) {
+      case WorkletInCmd.PROCESS:
+        if (implementation) {
+          implementation.process(data[1]);
         }
         break;
-      case 'done':
-        if (recorder) {
-          const _recorder = recorder;
-          recorder = null;
-          _recorder.close();
-          postMessage({ type: 'done' });
-        }
-        break;
-      case 'close':
+      case WorkletInCmd.STOP:
+        implementation = null;
+        postMessage([WorkletOutCommands.STOPPED, undefined] as WorkletOutMsg);
         close();
         break;
-      case 'init':
-        const wasmBytes = data['wasmBytes'];
-        delete data['wasmBytes'];
-        recorder = new RustpotterWorkletImpl(
-          wasmBytes,
-          data,
-          detection => postMessage({ type: 'detection', detection }),
+      case WorkletInCmd.START:
+        implementation = new RustpotterWorkletImpl(
+          data[1],
+          (...msg) => postMessage(msg),
         );
-        recorder.waitReady()
-          .then(() => {
-            postMessage({ type: 'rustpotter-ready' });
-          })
-          .catch((err: any) => {
-            console.error(err);
-            postMessage({ type: 'rustpotter-error' });
-          });
-        break;
-      case 'wakeword':
-        const wakewordData = new Uint8Array(data["wakewordBytes"]);
-        if (!recorder) {
-          postMessage({ type: 'wakeword-error' });
-        }
-        try {
-          recorder.addWakeword(wakewordData);
-          postMessage({ type: 'wakeword-loaded' });
-        } catch (error) {
-          console.error(error);
-          postMessage({ type: 'wakeword-error' });
-        }
+        postMessage([WorkletOutCommands.STARTED, true]);
         break;
       default:
-      // Ignore any unknown commands and continue recieving commands
+        console.warn(`Unknown command ${data[0]}`);
     }
   };
 }

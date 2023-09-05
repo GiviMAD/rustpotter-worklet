@@ -57,6 +57,7 @@ export type RustpotterConfig = {
     scoreRef: number;
     bandSize: number;
     minScores: number;
+    eager: boolean;
     scoreMode: ScoreMode;
     vadMode: VADMode | undefined;
     gainNormalizerEnabled: boolean;

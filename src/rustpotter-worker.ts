@@ -136,6 +136,7 @@ class RustpotterWorkerImpl {
         rustpotterConfig.setScoreRef(config.scoreRef);
         rustpotterConfig.setBandSize(config.bandSize);
         rustpotterConfig.setMinScores(config.minScores);
+        rustpotterConfig.setEager(config.eager);
         rustpotterConfig.setScoreMode(config.scoreMode);
         rustpotterConfig.setVADMode(config.vadMode);
         rustpotterConfig.setGainNormalizerEnabled(config.gainNormalizerEnabled);

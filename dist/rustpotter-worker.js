@@ -239,7 +239,7 @@ class Rustpotter {
         wasm.__wbg_rustpotter_free(ptr);
     }
     /**
-    * Creates rustpotter instance.
+    * Creates a rustpotter instance.
     * @param {RustpotterConfig} config
     * @returns {Rustpotter}
     */
@@ -407,6 +407,7 @@ class RustpotterConfig {
         wasm.__wbg_rustpotterconfig_free(ptr);
     }
     /**
+    * Creates a rustpotter config instance.
     * @returns {RustpotterConfig}
     */
     static new() {
@@ -463,6 +464,34 @@ class RustpotterConfig {
     */
     setScoreMode(value) {
         wasm.rustpotterconfig_setScoreMode(this.__wbg_ptr, value);
+    }
+    /**
+    * Configures the comparator the band size.
+    * Doesn't apply to trained wakewords.
+    *
+    * Defaults to 5
+    * @param {number} value
+    */
+    setBandSize(value) {
+        wasm.rustpotterconfig_setBandSize(this.__wbg_ptr, value);
+    }
+    /**
+    * Value used to express the score as a percent in range 0 - 1.
+    *
+    * Defaults to 0.22
+    * @param {number} value
+    */
+    setScoreRef(value) {
+        wasm.rustpotterconfig_setScoreRef(this.__wbg_ptr, value);
+    }
+    /**
+    * Emit detection on min scores.
+    *
+    * Defaults to false
+    * @param {boolean} value
+    */
+    setEager(value) {
+        wasm.rustpotterconfig_setEager(this.__wbg_ptr, value);
     }
     /**
     * Use a gain-normalization filter to dynamically change the input volume level.
@@ -558,34 +587,6 @@ class RustpotterConfig {
     */
     setChannels(value) {
         wasm.rustpotterconfig_setChannels(this.__wbg_ptr, value);
-    }
-    /**
-    * Configures the comparator the band size.
-    * Doesn't apply to trained wakewords.
-    *
-    * Defaults to 5
-    * @param {number} value
-    */
-    setBandSize(value) {
-        wasm.rustpotterconfig_setBandSize(this.__wbg_ptr, value);
-    }
-    /**
-    * Value used to express the score as a percent in range 0 - 1.
-    *
-    * Defaults to 0.22
-    * @param {number} value
-    */
-    setScoreRef(value) {
-        wasm.rustpotterconfig_setScoreRef(this.__wbg_ptr, value);
-    }
-    /**
-    * Emit detection on min scores.
-    *
-    * Defaults to false
-    * @param {boolean} value
-    */
-    setEager(value) {
-        wasm.rustpotterconfig_setEager(this.__wbg_ptr, value);
     }
 }
 /**
@@ -1027,6 +1028,7 @@ class RustpotterWorkerImpl {
         rustpotterConfig.setScoreRef(config.scoreRef);
         rustpotterConfig.setBandSize(config.bandSize);
         rustpotterConfig.setMinScores(config.minScores);
+        rustpotterConfig.setEager(config.eager);
         rustpotterConfig.setScoreMode(config.scoreMode);
         rustpotterConfig.setVADMode(config.vadMode);
         rustpotterConfig.setGainNormalizerEnabled(config.gainNormalizerEnabled);
